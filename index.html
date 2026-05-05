@@ -35,7 +35,12 @@ const LEVEL_COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#65a30d', '#16a34a'];
 const LEVEL_BG = ['#fee2e2', '#ffedd5', '#fef9c3', '#ecfccb', '#dcfce7'];
 const LEVEL_TEXT = ['#991b1b', '#9a3412', '#854d0e', '#3f6212', '#166534'];
 const SCORES = [0, 25, 50, 75, 100];
-const DEFAULT_MISSIONS = ['이해도', '워크북', '변형문제', '서술형'];
+const DEFAULT_MISSIONS = [
+  { name: '이해도', track_count: false },
+  { name: '워크북', track_count: true },
+  { name: '변형문제', track_count: true },
+  { name: '서술형', track_count: false },
+];
 
 // ===== 상태 =====
 const state = {
@@ -46,6 +51,7 @@ const state = {
   questionFilter: 'unanswered',
   student: null,
   studentTab: 'progress',
+  expandedPassageId: null,
 };
 
 const app = document.getElementById('app');
@@ -333,17 +339,17 @@ async function renderStudent() {
   attachLogoLink();
   document.getElementById('logout').onclick = () => go('entry');
   document.querySelectorAll('.stab-btn').forEach(b => {
-    b.onclick = () => { state.studentTab = b.dataset.stab; renderStudent(); };
+    b.onclick = () => { state.studentTab = b.dataset.stab; state.expandedPassageId = null; renderStudent(); };
   });
   
   if (state.studentTab === 'progress') {
-    renderStudentProgress(passages, missions, evalMap);
+    renderStudentProgress(passages, missions, evalMap, questions);
   } else {
     renderStudentQuestions(passages, missions, questions);
   }
 }
 
-function renderStudentProgress(passages, missions, evalMap) {
+function renderStudentProgress(passages, missions, evalMap, questions) {
   const main = document.getElementById('studentMain');
   
   if (!passages.length || !missions.length) {
@@ -351,54 +357,131 @@ function renderStudentProgress(passages, missions, evalMap) {
     return;
   }
   
+  // 펼친 지문 상세 화면
+  if (state.expandedPassageId) {
+    const p = passages.find(x => x.id === state.expandedPassageId);
+    if (!p) { state.expandedPassageId = null; renderStudentProgress(passages, missions, evalMap, questions); return; }
+    renderPassageDetail(p, missions, evalMap, questions);
+    return;
+  }
+  
+  // 카드 그리드 (기본)
   main.innerHTML = `
-    <div class="space-y-3">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       ${passages.map(p => {
         const cellEvals = missions.map(m => evalMap[p.id]?.[m.id] || {});
-        const myLevels = cellEvals.map(e => e.student_level);
-        const tLevels = cellEvals.map(e => e.teacher_level);
-        const myAvg = avgLevel(myLevels);
-        const tAvg = avgLevel(tLevels);
+        const myAvg = avgLevel(cellEvals.map(e => e.student_level));
+        const tAvg = avgLevel(cellEvals.map(e => e.teacher_level));
+        const qCount = questions.filter(q => q.passage_id === p.id).length;
+        const unansweredCount = questions.filter(q => q.passage_id === p.id && !q.answered_at).length;
+        
         return `
-          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <div class="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <div class="font-semibold text-sm sm:text-base">${esc(p.label)}</div>
+          <button class="passage-card bg-white rounded-xl border border-slate-200 p-4 text-left hover:border-indigo-300" data-id="${p.id}">
+            <div class="font-bold text-base mb-3 text-slate-900">${esc(p.label)}</div>
+            <div class="space-y-1.5">
               <div class="flex items-center gap-2 text-xs">
-                <span class="text-slate-500">내</span>${myAvg ? levelBadge(myAvg.idx) : '<span class="text-slate-300">-</span>'}
-                <span class="text-slate-500 ml-1">선생님</span>${tAvg ? levelBadge(tAvg.idx) : '<span class="text-slate-300">-</span>'}
+                <span class="text-slate-500 w-12">내 평가</span>
+                ${myAvg ? levelBadge(myAvg.idx) : '<span class="text-slate-300">-</span>'}
+              </div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-500 w-12">선생님</span>
+                ${tAvg ? levelBadge(tAvg.idx) : '<span class="text-slate-300">-</span>'}
               </div>
             </div>
-            <div class="divide-y divide-slate-100">
-              ${missions.map((m, i) => {
-                const e = cellEvals[i];
-                return `
-                  <div class="px-4 py-3">
-                    <div class="font-medium text-sm mb-2">${esc(m.name)}</div>
-                    <div class="flex items-center gap-2 mb-1.5">
-                      <span class="text-xs text-slate-500 w-14 shrink-0">내 평가</span>
-                      <div class="flex-1 max-w-[280px]">${levelSelector(e.student_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="student"`)}</div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="text-xs text-slate-500 w-14 shrink-0">선생님</span>
-                      ${e.teacher_level != null ? levelBadgeBig(e.teacher_level) : '<span class="text-xs text-slate-300">아직 평가 전</span>'}
-                    </div>
-                  </div>
-                `;
-              }).join('')}
-            </div>
-            <div class="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
-              <button class="ask-btn w-full bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-lg py-2 text-sm font-medium text-slate-700 transition" data-passage="${p.id}" data-passage-label="${esc(p.label)}">
-                💬 이 지문에 대해 질문하기
-              </button>
-            </div>
-          </div>`;
+            ${qCount ? `<div class="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-500">💬 질문 ${qCount}건${unansweredCount ? ` <span class="text-amber-600">· 답변 대기 ${unansweredCount}</span>` : ''}</div>` : ''}
+          </button>`;
       }).join('')}
-    </div>
-  `;
+    </div>`;
   
-  // Self-evaluation handlers
+  main.querySelectorAll('.passage-card').forEach(btn => {
+    btn.onclick = () => { state.expandedPassageId = btn.dataset.id; renderStudent(); };
+  });
+}
+
+function renderPassageDetail(p, missions, evalMap, questions) {
+  const main = document.getElementById('studentMain');
+  const cellEvals = missions.map(m => evalMap[p.id]?.[m.id] || {});
+  const myAvg = avgLevel(cellEvals.map(e => e.student_level));
+  const tAvg = avgLevel(cellEvals.map(e => e.teacher_level));
+  const passageQuestions = questions.filter(q => q.passage_id === p.id);
+  const pMap = { [p.id]: p.label };
+  
+  main.innerHTML = `
+    <div>
+      <button id="backToGrid" class="text-sm text-slate-500 hover:text-slate-700 mb-3">← 지문 목록</button>
+      
+      <div class="bg-white rounded-xl border border-indigo-200 overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 bg-indigo-50">
+          <div class="flex justify-between items-start gap-3 flex-wrap">
+            <div class="font-bold text-lg">${esc(p.label)}</div>
+            <div class="flex items-center gap-2 text-xs">
+              <span class="text-slate-500">평균</span>
+              <span class="text-slate-500">내</span>${myAvg ? levelBadge(myAvg.idx) : '<span class="text-slate-300">-</span>'}
+              <span class="text-slate-500 ml-1">선생님</span>${tAvg ? levelBadge(tAvg.idx) : '<span class="text-slate-300">-</span>'}
+            </div>
+          </div>
+        </div>
+        <div class="divide-y divide-slate-100">
+          ${missions.map((m, i) => {
+            const e = cellEvals[i];
+            return `
+              <div class="px-4 py-4">
+                <div class="flex justify-between items-center mb-2">
+                  <div class="font-semibold text-sm">${esc(m.name)}</div>
+                  ${m.track_count ? `<div class="text-xs text-slate-500">완료 종류 수</div>` : ''}
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+                  <span class="text-xs text-slate-500 w-14 shrink-0">내 평가</span>
+                  <div class="flex-1 max-w-[280px]">${levelSelector(e.student_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="student"`)}</div>
+                  ${m.track_count ? `<input type="number" min="0" max="999" class="my-count border border-slate-300 rounded px-2 py-1 text-sm w-20 text-center" placeholder="-" value="${e.student_count ?? ''}" data-passage="${p.id}" data-mission="${m.id}">` : ''}
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <span class="text-xs text-slate-500 w-14 shrink-0">선생님</span>
+                  ${e.teacher_level != null ? levelBadgeBig(e.teacher_level) : '<span class="text-xs text-slate-300">아직 평가 전</span>'}
+                  ${m.track_count && e.teacher_count != null ? `<span class="text-xs text-slate-600 ml-2">${e.teacher_count}종</span>` : ''}
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+        <div class="px-4 py-3 border-t border-slate-100 bg-slate-50">
+          <button id="askBtn" class="w-full bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-lg py-2.5 text-sm font-medium text-slate-700">💬 이 지문에 대해 질문하기</button>
+        </div>
+      </div>
+      
+      ${passageQuestions.length ? `
+        <div class="mt-5">
+          <div class="text-sm font-semibold text-slate-700 mb-2">이 지문 관련 질문</div>
+          <div class="space-y-2">
+            ${passageQuestions.map(q => `
+              <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex justify-end items-center text-xs">
+                  <div class="text-slate-400">${esc(fmtDate(q.created_at))}</div>
+                </div>
+                <div class="p-4">
+                  <div class="text-xs text-indigo-600 font-medium mb-1">질문</div>
+                  ${q.text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.text)}</div>` : ''}
+                  ${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer" onclick="window.open('${esc(q.image_url)}', '_blank')">` : ''}
+                  ${q.answer_text || q.answer_image_url ? `
+                    <div class="mt-4 pt-4 border-t border-slate-100">
+                      <div class="text-xs text-emerald-600 font-medium mb-1">선생님 답변 · ${esc(fmtDate(q.answered_at))}</div>
+                      ${q.answer_text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.answer_text)}</div>` : ''}
+                      ${q.answer_image_url ? `<img src="${esc(q.answer_image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer" onclick="window.open('${esc(q.answer_image_url)}', '_blank')">` : ''}
+                    </div>
+                  ` : `<div class="mt-3 text-xs text-amber-600">답변 대기 중...</div>`}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    </div>`;
+  
+  document.getElementById('backToGrid').onclick = () => { state.expandedPassageId = null; renderStudent(); };
+  document.getElementById('askBtn').onclick = () => showQuestionModal(p.id, esc(p.label));
+  
+  // 학생 평가 단계 클릭
   main.querySelectorAll('[data-role="student"] .lvl-btn').forEach(btn => {
-    btn.onclick = async (e) => {
+    btn.onclick = async () => {
       const grid = btn.parentElement;
       const passageId = grid.dataset.passage;
       const missionId = grid.dataset.mission;
@@ -408,10 +491,11 @@ function renderStudentProgress(passages, missions, evalMap) {
       
       const { error } = await sb.from('evaluations').upsert({
         student_id: state.student.id,
-        passage_id: passageId,
-        mission_id: missionId,
+        passage_id: passageId, mission_id: missionId,
         student_level: finalLevel,
         teacher_level: currentEval.teacher_level ?? null,
+        student_count: currentEval.student_count ?? null,
+        teacher_count: currentEval.teacher_count ?? null,
         student_updated_at: new Date().toISOString(),
         teacher_updated_at: currentEval.teacher_updated_at || null,
       }, { onConflict: 'student_id,passage_id,mission_id' });
@@ -421,9 +505,31 @@ function renderStudentProgress(passages, missions, evalMap) {
     };
   });
   
-  // 통합 질문 버튼 (지문 단위)
-  main.querySelectorAll('.ask-btn').forEach(btn => {
-    btn.onclick = () => showQuestionModal(btn.dataset.passage, btn.dataset.passageLabel);
+  // 학생 카운트 입력
+  main.querySelectorAll('input.my-count').forEach(input => {
+    const save = async () => {
+      const passageId = input.dataset.passage;
+      const missionId = input.dataset.mission;
+      const v = input.value.trim();
+      const newCount = v === '' ? null : Math.max(0, Math.min(999, parseInt(v) || 0));
+      const currentEval = (evalMap[passageId] || {})[missionId] || {};
+      
+      const { error } = await sb.from('evaluations').upsert({
+        student_id: state.student.id,
+        passage_id: passageId, mission_id: missionId,
+        student_level: currentEval.student_level ?? null,
+        teacher_level: currentEval.teacher_level ?? null,
+        student_count: newCount,
+        teacher_count: currentEval.teacher_count ?? null,
+        student_updated_at: new Date().toISOString(),
+        teacher_updated_at: currentEval.teacher_updated_at || null,
+      }, { onConflict: 'student_id,passage_id,mission_id' });
+      
+      if (error) toast('저장 실패', 'error');
+      else renderStudent();
+    };
+    input.onblur = save;
+    input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
   });
 }
 
@@ -633,8 +739,7 @@ async function renderExamList() {
     const { data: newExam, error } = await sb.from('exams').insert({ name, school, grade, exam_date }).select().single();
     if (error) { toast('저장 실패: ' + error.message, 'error'); return; }
     
-    // 기본 미션 4개 자동 생성
-    await sb.from('missions').insert(DEFAULT_MISSIONS.map((m, i) => ({ exam_id: newExam.id, name: m, sort_order: i })));
+    await sb.from('missions').insert(DEFAULT_MISSIONS.map((m, i) => ({ exam_id: newExam.id, name: m.name, track_count: m.track_count, sort_order: i })));
     
     toast('추가됐어요', 'success');
     renderExamList();
@@ -944,15 +1049,24 @@ async function renderEvaluateTab() {
                 ${missions.map(m => {
                   const e = (evalMap[p.id] || {})[m.id] || {};
                   return `
-                    <div class="px-4 py-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-                      <div class="sm:col-span-2 font-medium text-sm">${esc(m.name)}</div>
-                      <div class="sm:col-span-3 flex items-center gap-2">
-                        <span class="text-xs text-slate-500 shrink-0">학생</span>
-                        ${e.student_level != null ? levelBadge(e.student_level) : '<span class="text-xs text-slate-300">-</span>'}
+                    <div class="px-4 py-3">
+                      <div class="flex items-center gap-2 flex-wrap mb-2">
+                        <div class="font-medium text-sm">${esc(m.name)}</div>
+                        ${m.track_count ? '<span class="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">종류 추적</span>' : ''}
                       </div>
-                      <div class="sm:col-span-7">
-                        <div class="text-xs text-slate-500 mb-1">선생님 평가</div>
-                        ${levelSelector(e.teacher_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="teacher"`)}
+                      <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                        <div class="sm:col-span-3 flex items-center gap-2 text-xs">
+                          <span class="text-slate-500 shrink-0">학생</span>
+                          ${e.student_level != null ? levelBadge(e.student_level) : '<span class="text-slate-300">-</span>'}
+                          ${m.track_count && e.student_count != null ? `<span class="text-slate-600 ml-1">${e.student_count}종</span>` : ''}
+                        </div>
+                        <div class="sm:col-span-9">
+                          <div class="text-xs text-slate-500 mb-1">선생님 평가</div>
+                          <div class="flex flex-wrap gap-2 items-center">
+                            <div class="flex-1 max-w-[280px]">${levelSelector(e.teacher_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="teacher"`)}</div>
+                            ${m.track_count ? `<input type="number" min="0" max="999" class="t-count border border-slate-300 rounded px-2 py-1.5 text-sm w-20 text-center" placeholder="종 수" value="${e.teacher_count ?? ''}" data-passage="${p.id}" data-mission="${m.id}"><span class="text-xs text-slate-500">종</span>` : ''}
+                          </div>
+                        </div>
                       </div>
                     </div>`;
                 }).join('')}
@@ -982,6 +1096,8 @@ async function renderEvaluateTab() {
         mission_id: missionId,
         student_level: currentEval.student_level ?? null,
         teacher_level: finalLevel,
+        student_count: currentEval.student_count ?? null,
+        teacher_count: currentEval.teacher_count ?? null,
         student_updated_at: currentEval.student_updated_at || null,
         teacher_updated_at: new Date().toISOString(),
       }, { onConflict: 'student_id,passage_id,mission_id' });
@@ -989,6 +1105,32 @@ async function renderEvaluateTab() {
       if (error) { toast('저장 실패', 'error'); return; }
       renderEvaluateTab();
     };
+  });
+  
+  c.querySelectorAll('input.t-count').forEach(input => {
+    const save = async () => {
+      const passageId = input.dataset.passage;
+      const missionId = input.dataset.mission;
+      const v = input.value.trim();
+      const newCount = v === '' ? null : Math.max(0, Math.min(999, parseInt(v) || 0));
+      const currentEval = (evalMap[passageId] || {})[missionId] || {};
+      
+      const { error } = await sb.from('evaluations').upsert({
+        student_id: selectedStudent.id,
+        passage_id: passageId, mission_id: missionId,
+        student_level: currentEval.student_level ?? null,
+        teacher_level: currentEval.teacher_level ?? null,
+        student_count: currentEval.student_count ?? null,
+        teacher_count: newCount,
+        student_updated_at: currentEval.student_updated_at || null,
+        teacher_updated_at: new Date().toISOString(),
+      }, { onConflict: 'student_id,passage_id,mission_id' });
+      
+      if (error) toast('저장 실패', 'error');
+      else renderEvaluateTab();
+    };
+    input.onblur = save;
+    input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
   });
 }
 
@@ -1460,7 +1602,7 @@ async function renderMissionsTab() {
   c.innerHTML = `
     <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
       <div class="font-semibold mb-1">미션 항목</div>
-      <div class="text-xs text-slate-500 mb-3">시험 만들 때 기본 4개(이해도/워크북/변형문제/서술형)가 자동 생성됩니다. 필요시 추가/수정/삭제 가능</div>
+      <div class="text-xs text-slate-500 mb-3">"종류 추적"을 켜면 학생이 완료한 종류 수도 입력할 수 있어요 (워크북/변형문제 등)</div>
       <div class="flex gap-2">
         <input id="mName" placeholder="새 미션명" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
         <button id="addMission" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
@@ -1470,9 +1612,13 @@ async function renderMissionsTab() {
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
       ${missions.length ? `<div class="divide-y divide-slate-100">
         ${missions.map((m, i) => `
-          <div class="px-4 py-3 flex items-center gap-3">
-            <span class="text-xs text-slate-400 w-6">${i+1}</span>
-            <input class="m-name flex-1 border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm" value="${esc(m.name)}" data-id="${m.id}">
+          <div class="px-4 py-3 flex items-center gap-3 flex-wrap">
+            <span class="text-xs text-slate-400 w-6 shrink-0">${i+1}</span>
+            <input class="m-name flex-1 min-w-[140px] border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm" value="${esc(m.name)}" data-id="${m.id}">
+            <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" class="m-track w-4 h-4 rounded border-slate-300" ${m.track_count ? 'checked' : ''} data-id="${m.id}">
+              종류 추적
+            </label>
             <button class="m-up text-slate-400 hover:text-slate-700 px-2 text-sm" data-idx="${i}">↑</button>
             <button class="m-down text-slate-400 hover:text-slate-700 px-2 text-sm" data-idx="${i}">↓</button>
             <button class="m-del text-slate-400 hover:text-rose-600 px-2 text-sm" data-id="${m.id}">삭제</button>
@@ -1498,6 +1644,13 @@ async function renderMissionsTab() {
       await sb.from('missions').update({ name: newName }).eq('id', input.dataset.id);
     };
     input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
+  });
+  
+  document.querySelectorAll('.m-track').forEach(cb => {
+    cb.onchange = async () => {
+      await sb.from('missions').update({ track_count: cb.checked }).eq('id', cb.dataset.id);
+      toast('변경됐어요', 'success');
+    };
   });
   
   document.querySelectorAll('.m-del').forEach(btn => {
