@@ -2,25 +2,20 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>김기준영어학원 - 내신 진도 관리</title>
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { font-family: 'Pretendard', -apple-system, sans-serif; }
-  .scroll-shadow { background:
-    linear-gradient(white 30%, rgba(255,255,255,0)) center top,
-    linear-gradient(rgba(255,255,255,0), white 70%) center bottom,
-    radial-gradient(farthest-side at 50% 0, rgba(0,0,0,0.08), rgba(0,0,0,0)) center top,
-    radial-gradient(farthest-side at 50% 100%, rgba(0,0,0,0.08), rgba(0,0,0,0)) center bottom;
-    background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
-    background-repeat: no-repeat;
-    background-attachment: local, local, scroll, scroll;
-  }
-  input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
-  .check-task { transition: all 0.15s; }
-  .check-task:hover { background: #f8fafc; }
+  input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
+  .lvl-btn { user-select: none; }
+  .lvl-btn:hover:not(.active) { background: #e2e8f0 !important; }
+  .modal-bg { animation: fadeIn 0.15s ease; }
+  .modal-card { animation: slideUp 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes slideUp { from { transform: translateY(10px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }
 </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
@@ -34,17 +29,23 @@ const ADMIN_PASSWORD = 'kkj2026'; // ⚠️ 비밀번호 - 원하시면 여기�
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ===== 상수 =====
+const LEVELS = ['하', '중하', '중', '중상', '상'];
+const LEVEL_COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#65a30d', '#16a34a'];
+const LEVEL_BG = ['#fee2e2', '#ffedd5', '#fef9c3', '#ecfccb', '#dcfce7'];
+const LEVEL_TEXT = ['#991b1b', '#9a3412', '#854d0e', '#3f6212', '#166534'];
+const SCORES = [0, 25, 50, 75, 100];
+const DEFAULT_MISSIONS = ['이해도', '워크북', '변형문제', '서술형'];
+
 // ===== 상태 =====
 const state = {
   view: 'entry',
   exam: null,
-  examTab: 'content',
+  examTab: 'dashboard',
+  selectedStudentId: null,
+  questionFilter: 'unanswered',
   student: null,
-  passages: [],
-  students: [],
-  progress: [],
-  exams: [],
-  selectedPassageId: null,
+  studentTab: 'progress',
 };
 
 const app = document.getElementById('app');
@@ -55,14 +56,63 @@ const genCode = () => {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
-const toast = (msg, type='info') => {
+const fmtDate = (d) => d ? new Date(d).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+function toast(msg, type='info') {
   const t = document.createElement('div');
   const colors = { info: 'bg-slate-800', success: 'bg-emerald-600', error: 'bg-rose-600' };
-  t.className = `fixed top-6 left-1/2 -translate-x-1/2 ${colors[type]} text-white px-5 py-2.5 rounded-lg shadow-lg z-50 text-sm font-medium`;
+  t.className = `fixed top-6 left-1/2 -translate-x-1/2 ${colors[type]} text-white px-5 py-2.5 rounded-lg shadow-lg z-[100] text-sm font-medium`;
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2200);
-};
+}
+
+function showError(error, container = app) {
+  container.innerHTML = `
+    <div class="max-w-md mx-auto mt-20 p-6 bg-rose-50 border border-rose-200 rounded-xl">
+      <div class="font-bold text-rose-700 mb-2">오류가 발생했어요</div>
+      <div class="text-sm text-rose-600 mb-3 break-all">${esc(error.message || '')}</div>
+      <div class="text-xs text-rose-500 mb-3">코드: ${esc(error.code || '?')}</div>
+      <button onclick="location.reload()" class="text-sm bg-rose-600 text-white px-3 py-1.5 rounded">새로고침</button>
+    </div>`;
+}
+
+function avgLevel(arr) {
+  const v = arr.filter(x => x != null);
+  if (!v.length) return null;
+  const score = v.reduce((s,x) => s + SCORES[x], 0) / v.length;
+  let best = 0, minD = Infinity;
+  SCORES.forEach((s,i) => { if (Math.abs(s-score) < minD) { minD = Math.abs(s-score); best = i; } });
+  return { idx: best, label: LEVELS[best], score };
+}
+
+function levelBadge(l) {
+  if (l == null) return `<span class="text-slate-300 text-xs">-</span>`;
+  return `<span class="inline-flex items-center justify-center font-medium rounded px-2 py-0.5 text-xs" style="background:${LEVEL_BG[l]};color:${LEVEL_TEXT[l]}">${LEVELS[l]}</span>`;
+}
+function levelBadgeBig(l) {
+  if (l == null) return `<span class="text-slate-300 text-sm">-</span>`;
+  return `<span class="inline-flex items-center justify-center font-semibold rounded-md px-3 py-1 text-sm" style="background:${LEVEL_COLORS[l]};color:white">${LEVELS[l]}</span>`;
+}
+
+function levelSelector(currentLevel, dataAttrs = '') {
+  return `
+    <div class="grid grid-cols-5 gap-1" ${dataAttrs}>
+      ${LEVELS.map((label, i) => `
+        <button type="button" data-level="${i}" class="lvl-btn ${currentLevel === i ? 'active' : ''} py-1.5 rounded text-xs font-medium transition" style="${currentLevel === i ? `background:${LEVEL_COLORS[i]};color:white` : 'background:#f1f5f9;color:#64748b'}">${label}</button>
+      `).join('')}
+    </div>`;
+}
+
+async function uploadImage(file) {
+  if (!file) return null;
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const filename = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+  const { error } = await sb.storage.from('questions').upload(filename, file, { contentType: file.type });
+  if (error) { toast('이미지 업로드 실패: ' + error.message, 'error'); return null; }
+  const { data } = sb.storage.from('questions').getPublicUrl(filename);
+  return data.publicUrl;
+}
 
 // ===== 라우팅 =====
 function go(view, data={}) {
@@ -86,7 +136,7 @@ function renderEntry() {
       <div class="w-full max-w-md">
         <div class="text-center mb-10">
           <div class="text-3xl font-bold text-slate-900 mb-2">김기준영어학원</div>
-          <div class="text-slate-500 text-sm">내신 진도 관리 시스템</div>
+          <div class="text-slate-500 text-sm">내신 진도 관리</div>
         </div>
         <div class="space-y-3">
           <button id="btnAdmin" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-semibold shadow-sm transition">
@@ -144,8 +194,9 @@ function renderStudentLogin() {
     const code = document.getElementById('code').value.trim().toUpperCase();
     if (!code) return;
     const { data, error } = await sb.from('students').select('*').eq('code', code).maybeSingle();
-    if (error || !data) { toast('코드를 찾을 수 없어요', 'error'); return; }
-    go('student', { student: data });
+    if (error) { toast('오류: ' + error.message, 'error'); return; }
+    if (!data) { toast('코드를 찾을 수 없어요', 'error'); return; }
+    go('student', { student: data, studentTab: 'progress' });
   };
   document.getElementById('login').onclick = submit;
   document.getElementById('code').addEventListener('keydown', e => {
@@ -158,126 +209,286 @@ async function renderStudent() {
   const s = state.student;
   app.innerHTML = `<div class="text-center py-20 text-slate-400">불러오는 중...</div>`;
   
-  // 학생 시험 정보 + 지문 + 과제 + 진도
-  const examRes = await sb.from('exams').select('*').eq('id', s.exam_id).single();
-  const passagesRes = await sb.from('passages').select('*, tasks(*)').eq('exam_id', s.exam_id).order('number');
-  const progressRes = await sb.from('progress').select('*').eq('student_id', s.id);
+  const [examR, missionsR, passagesR, evalsR, questionsR] = await Promise.all([
+    sb.from('exams').select('*').eq('id', s.exam_id).maybeSingle(),
+    sb.from('missions').select('*').eq('exam_id', s.exam_id).order('sort_order'),
+    sb.from('passages').select('*').eq('exam_id', s.exam_id).order('sort_order'),
+    sb.from('evaluations').select('*').eq('student_id', s.id),
+    sb.from('questions').select('*').eq('student_id', s.id).order('created_at', { ascending: false }),
+  ]);
   
-  if (examRes.error || passagesRes.error || progressRes.error) {
-    app.innerHTML = `<div class="max-w-md mx-auto mt-20 p-6 bg-rose-50 border border-rose-200 rounded-xl">
-      <div class="font-bold text-rose-700 mb-2">데이터를 불러오지 못했어요</div>
-      <div class="text-sm text-rose-600 mb-3">${esc(examRes.error?.message || passagesRes.error?.message || progressRes.error?.message || '')}</div>
-      <button onclick="location.reload()" class="text-sm bg-rose-600 text-white px-3 py-1.5 rounded">다시 시도</button>
-    </div>`;
-    return;
+  for (const r of [examR, missionsR, passagesR, evalsR, questionsR]) {
+    if (r.error) { showError(r.error); return; }
   }
   
-  const exam = examRes.data;
-  const passages = passagesRes.data || [];
-  const progress = progressRes.data || [];
+  const exam = examR.data;
+  const missions = missionsR.data || [];
+  const passages = passagesR.data || [];
+  const evals = evalsR.data || [];
+  const questions = questionsR.data || [];
   
-  const doneIds = new Set(progress.filter(p => p.completed).map(p => p.task_id));
-  const allTasks = passages.flatMap(p => p.tasks || []);
-  const totalPct = allTasks.length ? Math.round(doneIds.size / allTasks.length * 100) : 0;
+  // Build map: passage_id -> mission_id -> {student_level, teacher_level}
+  const evalMap = {};
+  evals.forEach(e => {
+    if (!evalMap[e.passage_id]) evalMap[e.passage_id] = {};
+    evalMap[e.passage_id][e.mission_id] = e;
+  });
+  
+  const myLevels = evals.map(e => e.student_level).filter(l => l != null);
+  const tLevels = evals.map(e => e.teacher_level).filter(l => l != null);
+  const myAvg = avgLevel(myLevels);
+  const tAvg = avgLevel(tLevels);
   
   app.innerHTML = `
-    <div class="max-w-3xl mx-auto p-4 sm:p-6">
-      <div class="flex justify-between items-center mb-5">
-        <div>
-          <div class="text-sm text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
-          <div class="text-xl font-bold">${esc(s.name)} 학생</div>
+    <div class="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
+      <header class="mb-5">
+        <div class="flex justify-between items-start mb-4">
+          <div>
+            <div class="text-xs text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
+            <div class="text-xl font-bold">${esc(s.name)} 학생</div>
+            <div class="text-sm text-slate-500 mt-0.5">${esc(exam?.name || '시험 미배정')}</div>
+          </div>
+          <button id="logout" class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1 border border-slate-200 rounded-lg">로그아웃</button>
         </div>
-        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
-      </div>
+        
+        <div class="grid grid-cols-2 gap-2 mb-4">
+          <div class="bg-white rounded-xl border border-slate-200 p-3">
+            <div class="text-xs text-slate-500 mb-1">내 평가 평균</div>
+            <div class="text-lg font-bold">${myAvg ? `<span style="color:${LEVEL_COLORS[myAvg.idx]}">${myAvg.label}</span>` : '<span class="text-slate-300">-</span>'}</div>
+          </div>
+          <div class="bg-white rounded-xl border border-slate-200 p-3">
+            <div class="text-xs text-slate-500 mb-1">선생님 평가 평균</div>
+            <div class="text-lg font-bold">${tAvg ? `<span style="color:${LEVEL_COLORS[tAvg.idx]}">${tAvg.label}</span>` : '<span class="text-slate-300">-</span>'}</div>
+          </div>
+        </div>
+        
+        <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex gap-1 mb-3">
+          <button data-stab="progress" class="stab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.studentTab==='progress'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">진도</button>
+          <button data-stab="questions" class="stab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.studentTab==='questions'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">질문${questions.length ? ` (${questions.length})` : ''}</button>
+        </div>
+        
+        <div class="bg-white rounded-xl border border-slate-200 px-3 py-2 text-xs">
+          <span class="text-slate-500 font-medium mr-2">평가 기준</span>
+          ${LEVELS.map((l,i) => `<span class="inline-flex items-center gap-1 mr-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${LEVEL_COLORS[i]}"></span><span>${l}</span></span>`).join('')}
+        </div>
+      </header>
       
-      <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-5">
-        <div class="text-sm text-slate-500 mb-1">${esc(exam?.name || '')}</div>
-        <div class="flex items-baseline gap-3 mb-3">
-          <div class="text-4xl font-bold text-indigo-600">${totalPct}<span class="text-2xl">%</span></div>
-          <div class="text-sm text-slate-500">${doneIds.size} / ${allTasks.length} 완료</div>
-        </div>
-        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-          <div class="bg-indigo-600 h-2.5 transition-all" style="width:${totalPct}%"></div>
-        </div>
-      </div>
-      
-      <div class="space-y-3">
-        ${passages.map(p => {
-          const tasks = (p.tasks || []).sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0));
-          const done = tasks.filter(t => doneIds.has(t.id)).length;
-          const pct = tasks.length ? Math.round(done/tasks.length*100) : 0;
-          return `
-            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div class="p-4 border-b border-slate-100 flex justify-between items-center">
-                <div>
-                  <span class="inline-block bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded font-medium mr-2">${p.number}번</span>
-                  <span class="font-semibold">${esc(p.title || '제목 없음')}</span>
-                </div>
-                <div class="text-sm font-medium ${pct === 100 ? 'text-emerald-600' : 'text-slate-500'}">${done}/${tasks.length} · ${pct}%</div>
-              </div>
-              ${tasks.length ? `<div class="divide-y divide-slate-100">
-                ${tasks.map(t => `
-                  <label class="check-task flex items-center px-4 py-3 cursor-pointer">
-                    <input type="checkbox" class="task-cb w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" data-task-id="${t.id}" ${doneIds.has(t.id) ? 'checked' : ''}>
-                    <span class="ml-3 ${doneIds.has(t.id) ? 'text-slate-400 line-through' : 'text-slate-800'}">${esc(t.type_name)}</span>
-                    ${t.points ? `<span class="ml-auto text-xs text-slate-400">${t.points}점</span>` : ''}
-                  </label>
-                `).join('')}
-              </div>` : `<div class="p-4 text-sm text-slate-400">과제가 없어요</div>`}
-            </div>`;
-        }).join('') || '<div class="text-center py-12 text-slate-400">등록된 지문이 없어요</div>'}
-      </div>
+      <div id="studentMain"></div>
     </div>`;
   
   document.getElementById('logout').onclick = () => go('entry');
-  document.querySelectorAll('.task-cb').forEach(cb => {
-    cb.onchange = async () => {
-      const tid = cb.dataset.taskId;
-      const completed = cb.checked;
-      const { error } = await sb.from('progress').upsert({
-        student_id: s.id, task_id: tid, completed,
-        completed_at: completed ? new Date().toISOString() : null
-      }, { onConflict: 'student_id,task_id' });
-      if (error) { toast('저장 실패', 'error'); cb.checked = !completed; }
-      else { renderStudent(); }
+  document.querySelectorAll('.stab-btn').forEach(b => {
+    b.onclick = () => { state.studentTab = b.dataset.stab; renderStudent(); };
+  });
+  
+  if (state.studentTab === 'progress') {
+    renderStudentProgress(passages, missions, evalMap);
+  } else {
+    renderStudentQuestions(passages, missions, questions);
+  }
+}
+
+function renderStudentProgress(passages, missions, evalMap) {
+  const main = document.getElementById('studentMain');
+  
+  if (!passages.length || !missions.length) {
+    main.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">아직 시험범위가 등록되지 않았어요</div>`;
+    return;
+  }
+  
+  main.innerHTML = `
+    <div class="space-y-3">
+      ${passages.map(p => {
+        const cellEvals = missions.map(m => evalMap[p.id]?.[m.id] || {});
+        const myLevels = cellEvals.map(e => e.student_level);
+        const tLevels = cellEvals.map(e => e.teacher_level);
+        const myAvg = avgLevel(myLevels);
+        const tAvg = avgLevel(tLevels);
+        return `
+          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div class="font-semibold text-sm sm:text-base">${esc(p.label)}</div>
+              <div class="flex items-center gap-2 text-xs">
+                <span class="text-slate-500">내</span>${myAvg ? levelBadge(myAvg.idx) : '<span class="text-slate-300">-</span>'}
+                <span class="text-slate-500 ml-1">선생님</span>${tAvg ? levelBadge(tAvg.idx) : '<span class="text-slate-300">-</span>'}
+              </div>
+            </div>
+            <div class="divide-y divide-slate-100">
+              ${missions.map((m, i) => {
+                const e = cellEvals[i];
+                return `
+                  <div class="px-4 py-3">
+                    <div class="flex justify-between items-center mb-2">
+                      <div class="font-medium text-sm">${esc(m.name)}</div>
+                      <button class="ask-btn text-xs text-slate-500 hover:text-indigo-600 transition flex items-center gap-1" data-passage="${p.id}" data-mission="${m.id}" data-passage-label="${esc(p.label)}" data-mission-name="${esc(m.name)}">
+                        💬 질문
+                      </button>
+                    </div>
+                    <div class="flex items-center gap-2 mb-1.5">
+                      <span class="text-xs text-slate-500 w-14 shrink-0">내 평가</span>
+                      <div class="flex-1 max-w-[280px]">${levelSelector(e.student_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="student"`)}</div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <span class="text-xs text-slate-500 w-14 shrink-0">선생님</span>
+                      ${e.teacher_level != null ? levelBadgeBig(e.teacher_level) : '<span class="text-xs text-slate-300">아직 평가 전</span>'}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+  
+  // Self-evaluation handlers
+  main.querySelectorAll('[data-role="student"] .lvl-btn').forEach(btn => {
+    btn.onclick = async (e) => {
+      const grid = btn.parentElement;
+      const passageId = grid.dataset.passage;
+      const missionId = grid.dataset.mission;
+      const newLevel = parseInt(btn.dataset.level);
+      const currentEval = (evalMap[passageId] || {})[missionId] || {};
+      // Toggle: clicking the same level clears it
+      const finalLevel = currentEval.student_level === newLevel ? null : newLevel;
+      
+      const { error } = await sb.from('evaluations').upsert({
+        student_id: state.student.id,
+        passage_id: passageId,
+        mission_id: missionId,
+        student_level: finalLevel,
+        teacher_level: currentEval.teacher_level ?? null,
+        student_updated_at: new Date().toISOString(),
+        teacher_updated_at: currentEval.teacher_updated_at || null,
+      }, { onConflict: 'student_id,passage_id,mission_id' });
+      
+      if (error) { toast('저장 실패', 'error'); return; }
+      renderStudent();
     };
   });
+  
+  // Question button handlers
+  main.querySelectorAll('.ask-btn').forEach(btn => {
+    btn.onclick = () => showQuestionModal(btn.dataset.passage, btn.dataset.mission, btn.dataset.passageLabel, btn.dataset.missionName);
+  });
+}
+
+function renderStudentQuestions(passages, missions, questions) {
+  const main = document.getElementById('studentMain');
+  const pMap = Object.fromEntries(passages.map(p => [p.id, p.label]));
+  const mMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+  
+  if (!questions.length) {
+    main.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">아직 질문이 없어요. 진도 화면에서 💬 질문 버튼으로 올려보세요</div>`;
+    return;
+  }
+  
+  main.innerHTML = `
+    <div class="space-y-3">
+      ${questions.map(q => `
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center text-xs">
+            <div><span class="font-medium">${esc(pMap[q.passage_id] || '?')}</span>${q.mission_id ? ` · ${esc(mMap[q.mission_id] || '')}` : ''}</div>
+            <div class="text-slate-400">${esc(fmtDate(q.created_at))}</div>
+          </div>
+          <div class="p-4">
+            <div class="text-xs text-indigo-600 font-medium mb-1">질문</div>
+            ${q.text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.text)}</div>` : ''}
+            ${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer" onclick="window.open('${esc(q.image_url)}', '_blank')">` : ''}
+            
+            ${q.answer_text || q.answer_image_url ? `
+              <div class="mt-4 pt-4 border-t border-slate-100">
+                <div class="text-xs text-emerald-600 font-medium mb-1">선생님 답변 · ${esc(fmtDate(q.answered_at))}</div>
+                ${q.answer_text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.answer_text)}</div>` : ''}
+                ${q.answer_image_url ? `<img src="${esc(q.answer_image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer" onclick="window.open('${esc(q.answer_image_url)}', '_blank')">` : ''}
+              </div>
+            ` : `<div class="mt-3 text-xs text-amber-600">답변 대기 중...</div>`}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ===== 질문 등록 모달 =====
+function showQuestionModal(passageId, missionId, passageLabel, missionName) {
+  const modal = document.createElement('div');
+  modal.className = 'fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 modal-bg';
+  modal.innerHTML = `
+    <div class="bg-white rounded-2xl max-w-md w-full p-5 max-h-[90vh] overflow-y-auto modal-card">
+      <div class="text-xs text-slate-500 mb-1">${esc(passageLabel)} · ${esc(missionName)}</div>
+      <div class="font-bold text-lg mb-3">질문하기</div>
+      <textarea id="qText" rows="3" placeholder="궁금한 내용을 적어주세요" class="w-full border border-slate-300 rounded-lg p-3 text-sm mb-3 resize-none"></textarea>
+      <label class="block mb-3">
+        <span class="text-xs text-slate-500 block mb-1">사진 첨부 (선택)</span>
+        <input id="qImage" type="file" accept="image/*" class="text-sm w-full">
+      </label>
+      <div id="qPreview" class="mb-3"></div>
+      <div class="flex gap-2">
+        <button id="qCancel" class="flex-1 bg-slate-100 hover:bg-slate-200 py-2.5 rounded-lg text-sm font-medium">취소</button>
+        <button id="qSubmit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg text-sm font-medium">올리기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  
+  const close = () => modal.remove();
+  document.getElementById('qCancel').onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  
+  document.getElementById('qImage').onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    document.getElementById('qPreview').innerHTML = `<img src="${URL.createObjectURL(file)}" class="max-h-40 rounded-lg border border-slate-200">`;
+  };
+  
+  document.getElementById('qSubmit').onclick = async () => {
+    const text = document.getElementById('qText').value.trim();
+    const file = document.getElementById('qImage').files[0];
+    if (!text && !file) { toast('내용이나 사진을 첨부해주세요', 'error'); return; }
+    
+    const btn = document.getElementById('qSubmit');
+    btn.disabled = true; btn.textContent = '올리는 중...';
+    
+    let imageUrl = null;
+    if (file) imageUrl = await uploadImage(file);
+    if (file && !imageUrl) { btn.disabled = false; btn.textContent = '올리기'; return; }
+    
+    const { error } = await sb.from('questions').insert({
+      student_id: state.student.id,
+      passage_id: passageId,
+      mission_id: missionId,
+      text: text || null,
+      image_url: imageUrl,
+    });
+    
+    if (error) { toast('저장 실패: ' + error.message, 'error'); btn.disabled = false; btn.textContent = '올리기'; return; }
+    
+    close();
+    toast('질문이 올라갔어요', 'success');
+    if (state.view === 'student') renderStudent();
+  };
 }
 
 // ===== 관리자 화면 =====
 async function renderAdmin() {
-  if (!state.exam) {
-    await renderExamList();
-  } else {
-    await renderExamDetail();
-  }
+  if (!state.exam) await renderExamList();
+  else await renderExamDetail();
 }
 
 async function renderExamList() {
   app.innerHTML = `<div class="text-center py-20 text-slate-400">불러오는 중...</div>`;
   const { data, error } = await sb.from('exams').select('*').order('created_at', { ascending: false });
-  
-  if (error) {
-    app.innerHTML = `<div class="max-w-md mx-auto mt-20 p-6 bg-rose-50 border border-rose-200 rounded-xl">
-      <div class="font-bold text-rose-700 mb-2">데이터를 불러오지 못했어요</div>
-      <div class="text-sm text-rose-600 mb-3 break-all">${esc(error.message || '')}</div>
-      <div class="text-xs text-rose-500 mb-3">코드: ${esc(error.code || '?')}</div>
-      <button onclick="location.reload()" class="text-sm bg-rose-600 text-white px-3 py-1.5 rounded">다시 시도</button>
-    </div>`;
-    return;
-  }
-  
+  if (error) { showError(error); return; }
   const exams = data || [];
-  state.exams = exams;
   
   app.innerHTML = `
-    <div class="max-w-5xl mx-auto p-4 sm:p-6">
-      <div class="flex justify-between items-center mb-6">
+    <div class="max-w-4xl mx-auto p-4 sm:p-6">
+      <div class="flex justify-between items-center mb-5">
         <div>
-          <div class="text-xs text-slate-500 mb-1">관리자 화면</div>
+          <div class="text-xs text-slate-500 mb-1">관리자</div>
           <h1 class="text-2xl font-bold">시험 목록</h1>
         </div>
-        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
       </div>
       
       <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
@@ -289,6 +500,7 @@ async function renderExamList() {
           <input id="newDate" type="date" class="border border-slate-300 rounded-lg px-3 py-2 sm:col-span-3">
           <button id="addExam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium">추가</button>
         </div>
+        <div class="text-xs text-slate-400 mt-2">시험 추가 시 미션 4개(이해도/워크북/변형문제/서술형)가 자동 생성돼요</div>
       </div>
       
       <div class="space-y-2">
@@ -300,7 +512,7 @@ async function renderExamList() {
             </div>
             <button data-id="${e.id}" class="del-exam text-slate-400 hover:text-rose-600 text-sm px-3">삭제</button>
           </div>
-        `).join('') : '<div class="text-center py-12 text-slate-400">시험이 없어요. 위에서 추가해주세요.</div>'}
+        `).join('') : '<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">시험이 없어요. 위에서 추가해주세요.</div>'}
       </div>
     </div>`;
   
@@ -311,21 +523,30 @@ async function renderExamList() {
     const grade = document.getElementById('newGrade').value.trim();
     const exam_date = document.getElementById('newDate').value || null;
     if (!name || !school || !grade) { toast('시험명/학교/학년은 필수예요', 'error'); return; }
-    const { error } = await sb.from('exams').insert({ name, school, grade, exam_date });
-    if (error) toast('저장 실패: ' + error.message, 'error');
-    else { toast('추가됐어요', 'success'); renderExamList(); }
+    
+    const { data: newExam, error } = await sb.from('exams').insert({ name, school, grade, exam_date }).select().single();
+    if (error) { toast('저장 실패: ' + error.message, 'error'); return; }
+    
+    // 기본 미션 4개 자동 생성
+    await sb.from('missions').insert(DEFAULT_MISSIONS.map((m, i) => ({ exam_id: newExam.id, name: m, sort_order: i })));
+    
+    toast('추가됐어요', 'success');
+    renderExamList();
   };
+  
   document.querySelectorAll('.exam-row').forEach(el => {
-    el.onclick = async () => {
+    el.onclick = () => {
       const exam = exams.find(e => e.id === el.dataset.id);
-      go('admin', { exam, examTab: 'content' });
+      go('admin', { exam, examTab: 'dashboard', selectedStudentId: null });
     };
   });
   document.querySelectorAll('.del-exam').forEach(el => {
-    el.onclick = async () => {
-      if (!confirm('이 시험과 관련된 모든 지문/과제/학생/진도가 삭제됩니다. 계속할까요?')) return;
+    el.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!confirm('이 시험과 모든 관련 데이터(지문/학생/평가/질문)가 삭제됩니다. 계속할까요?')) return;
       await sb.from('exams').delete().eq('id', el.dataset.id);
-      toast('삭제됐어요', 'success'); renderExamList();
+      toast('삭제됐어요', 'success');
+      renderExamList();
     };
   });
 }
@@ -333,19 +554,26 @@ async function renderExamList() {
 async function renderExamDetail() {
   const e = state.exam;
   app.innerHTML = `
-    <div class="max-w-6xl mx-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto p-4 sm:p-6 pb-24">
       <div class="flex justify-between items-start mb-5">
         <div>
           <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-2">← 시험 목록</button>
           <h1 class="text-2xl font-bold">${esc(e.name)}</h1>
           <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
         </div>
-        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
       </div>
       
-      <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex mb-5">
-        ${[['content','지문 & 과제'],['students','학생 관리'],['dashboard','진도 현황']].map(([k,l]) => `
-          <button data-tab="${k}" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.examTab===k?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-100'}">${l}</button>
+      <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex flex-wrap gap-1 mb-5">
+        ${[
+          ['dashboard','진도 현황'],
+          ['evaluate','학생별 평가'],
+          ['questions','질문/답변'],
+          ['passages','지문 관리'],
+          ['students','학생 관리'],
+          ['missions','미션 관리'],
+        ].map(([k,l]) => `
+          <button data-tab="${k}" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.examTab===k?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">${l}</button>
         `).join('')}
       </div>
       
@@ -355,146 +583,464 @@ async function renderExamDetail() {
   document.getElementById('back').onclick = () => go('admin', { exam: null });
   document.getElementById('logout').onclick = () => go('entry');
   document.querySelectorAll('.tab-btn').forEach(b => {
-    b.onclick = () => go('admin', { examTab: b.dataset.tab });
+    b.onclick = () => go('admin', { examTab: b.dataset.tab, selectedStudentId: null });
   });
   
-  if (state.examTab === 'content') await renderContentTab();
+  if (state.examTab === 'dashboard') await renderDashboardTab();
+  else if (state.examTab === 'evaluate') await renderEvaluateTab();
+  else if (state.examTab === 'questions') await renderQuestionsTab();
+  else if (state.examTab === 'passages') await renderPassagesTab();
   else if (state.examTab === 'students') await renderStudentsTab();
-  else if (state.examTab === 'dashboard') await renderDashboardTab();
+  else if (state.examTab === 'missions') await renderMissionsTab();
 }
 
-async function renderContentTab() {
+// ----- 진도 현황 (전체 학생 매트릭스) -----
+async function renderDashboardTab() {
   const c = document.getElementById('tabContent');
   c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
-  const { data, error } = await sb.from('passages').select('*, tasks(*)').eq('exam_id', state.exam.id).order('number');
-  if (error) { c.innerHTML = `<div class="text-rose-600 p-4">에러: ${esc(error.message)}</div>`; return; }
-  const passages = data || [];
+  
+  const [sR, mR, pR] = await Promise.all([
+    sb.from('students').select('*').eq('exam_id', state.exam.id).order('name'),
+    sb.from('missions').select('*').eq('exam_id', state.exam.id).order('sort_order'),
+    sb.from('passages').select('*').eq('exam_id', state.exam.id).order('sort_order'),
+  ]);
+  for (const r of [sR, mR, pR]) { if (r.error) { showError(r.error, c); return; } }
+  
+  const students = sR.data || [];
+  const missions = mR.data || [];
+  const passages = pR.data || [];
+  
+  if (!students.length) {
+    c.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">학생을 먼저 등록해주세요</div>`;
+    return;
+  }
+  
+  const studentIds = students.map(s => s.id);
+  const { data: evalsData } = await sb.from('evaluations').select('*').in('student_id', studentIds);
+  const evals = evalsData || [];
+  
+  // student_id -> passage_id -> mission_id -> {student_level, teacher_level}
+  const eMap = {};
+  evals.forEach(e => {
+    if (!eMap[e.student_id]) eMap[e.student_id] = {};
+    if (!eMap[e.student_id][e.passage_id]) eMap[e.student_id][e.passage_id] = {};
+    eMap[e.student_id][e.passage_id][e.mission_id] = e;
+  });
+  
+  // For each student, compute per-passage avg (teacher_level only) and overall
+  c.innerHTML = `
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+        <div class="font-semibold text-sm">선생님 평가 기준 진도 현황</div>
+        <div class="text-xs text-slate-500">학생 ${students.length}명 · 지문 ${passages.length}개 · 미션 ${missions.length}개</div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200 text-xs">
+            <tr>
+              <th class="text-left px-4 py-3 font-semibold sticky left-0 bg-slate-50 z-10 min-w-[100px]">학생</th>
+              <th class="text-center px-3 py-3 font-semibold whitespace-nowrap">전체평균</th>
+              ${passages.map(p => `<th class="text-center px-2 py-3 font-medium whitespace-nowrap min-w-[80px]">${esc(p.label)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${students.map(s => {
+              const sEvals = eMap[s.id] || {};
+              const allTeacher = [];
+              passages.forEach(p => {
+                missions.forEach(m => {
+                  const e = sEvals[p.id]?.[m.id];
+                  if (e?.teacher_level != null) allTeacher.push(e.teacher_level);
+                });
+              });
+              const overallAvg = avgLevel(allTeacher);
+              
+              return `
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-3 sticky left-0 bg-white">
+                    <button class="student-link font-medium text-slate-900 hover:text-indigo-600 underline-offset-2 hover:underline" data-id="${s.id}">${esc(s.name)}</button>
+                    <div class="text-xs text-slate-400 font-mono mt-0.5">${esc(s.code)}</div>
+                  </td>
+                  <td class="px-3 py-3 text-center">${overallAvg ? levelBadgeBig(overallAvg.idx) : '<span class="text-slate-300 text-sm">-</span>'}</td>
+                  ${passages.map(p => {
+                    const passLvls = missions.map(m => sEvals[p.id]?.[m.id]?.teacher_level);
+                    const passAvg = avgLevel(passLvls);
+                    return `<td class="px-2 py-3 text-center">${passAvg ? levelBadge(passAvg.idx) : '<span class="text-slate-300 text-xs">-</span>'}</td>`;
+                  }).join('')}
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="text-xs text-slate-400 mt-3">학생 이름을 클릭하면 평가 입력 화면으로 이동해요</div>`;
+  
+  c.querySelectorAll('.student-link').forEach(el => {
+    el.onclick = () => go('admin', { examTab: 'evaluate', selectedStudentId: el.dataset.id });
+  });
+}
+
+// ----- 학생별 평가 -----
+async function renderEvaluateTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  
+  const [sR, mR, pR] = await Promise.all([
+    sb.from('students').select('*').eq('exam_id', state.exam.id).order('name'),
+    sb.from('missions').select('*').eq('exam_id', state.exam.id).order('sort_order'),
+    sb.from('passages').select('*').eq('exam_id', state.exam.id).order('sort_order'),
+  ]);
+  for (const r of [sR, mR, pR]) { if (r.error) { showError(r.error, c); return; } }
+  
+  const students = sR.data || [];
+  const missions = mR.data || [];
+  const passages = pR.data || [];
+  
+  if (!students.length) { c.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">학생을 먼저 등록해주세요</div>`; return; }
+  if (!passages.length || !missions.length) { c.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">지문과 미션을 먼저 등록해주세요</div>`; return; }
+  
+  // Default to first student
+  if (!state.selectedStudentId || !students.find(s => s.id === state.selectedStudentId)) {
+    state.selectedStudentId = students[0].id;
+  }
+  
+  const selectedStudent = students.find(s => s.id === state.selectedStudentId);
+  const { data: evalsData } = await sb.from('evaluations').select('*').eq('student_id', selectedStudent.id);
+  const evals = evalsData || [];
+  
+  const evalMap = {};
+  evals.forEach(e => {
+    if (!evalMap[e.passage_id]) evalMap[e.passage_id] = {};
+    evalMap[e.passage_id][e.mission_id] = e;
+  });
+  
+  const myLevels = evals.map(e => e.student_level).filter(l => l != null);
+  const tLevels = evals.map(e => e.teacher_level).filter(l => l != null);
+  const myAvg = avgLevel(myLevels);
+  const tAvg = avgLevel(tLevels);
   
   c.innerHTML = `
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <!-- 학생 목록 사이드바 -->
       <div class="lg:col-span-1">
-        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-3">
-          <div class="font-semibold mb-3">새 지문 추가</div>
-          <div class="space-y-2">
-            <input id="pNum" type="number" placeholder="번호 (예: 1)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <input id="pTitle" placeholder="제목 (예: 환경 보호)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <input id="pSource" placeholder="출처 (선택)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
-            <button id="addPassage" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2 text-sm font-medium">지문 추가</button>
+        <div class="bg-white rounded-xl border border-slate-200 p-3 sticky top-4 max-h-[80vh] overflow-y-auto">
+          <div class="text-xs text-slate-500 font-medium mb-2 px-2">학생 선택</div>
+          <div class="space-y-1">
+            ${students.map(s => `
+              <button class="student-pick w-full text-left px-3 py-2 rounded-lg text-sm transition ${s.id === state.selectedStudentId ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-slate-50'}" data-id="${s.id}">
+                ${esc(s.name)}
+                <div class="text-xs text-slate-400 font-mono">${esc(s.code)}</div>
+              </button>
+            `).join('')}
           </div>
-        </div>
-        <div class="space-y-2">
-          ${passages.length ? passages.map(p => `
-            <div class="bg-white rounded-xl border ${state.selectedPassageId === p.id ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'} p-3 cursor-pointer passage-card" data-id="${p.id}">
-              <div class="flex justify-between items-start">
-                <div class="flex-1">
-                  <div class="text-xs text-slate-500">${p.number}번</div>
-                  <div class="font-medium text-sm">${esc(p.title || '제목 없음')}</div>
-                </div>
-                <button data-id="${p.id}" class="del-passage text-xs text-slate-400 hover:text-rose-600">×</button>
-              </div>
-              <div class="text-xs text-slate-400 mt-1">${(p.tasks || []).length}개 과제</div>
-            </div>
-          `).join('') : '<div class="text-center text-slate-400 text-sm py-6">지문을 추가해주세요</div>'}
         </div>
       </div>
       
-      <div class="lg:col-span-2">
-        <div id="taskPanel" class="bg-white rounded-xl border border-slate-200 p-5 min-h-[300px]">
-          ${state.selectedPassageId ? '' : '<div class="text-center text-slate-400 py-16">왼쪽에서 지문을 선택하면<br>과제(유형)를 추가할 수 있어요</div>'}
+      <!-- 매트릭스 -->
+      <div class="lg:col-span-3">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-3">
+          <div class="flex justify-between items-center">
+            <div>
+              <div class="text-xs text-slate-500">${esc(selectedStudent.school || '')} ${esc(selectedStudent.grade || '')}</div>
+              <div class="font-bold text-lg">${esc(selectedStudent.name)}</div>
+            </div>
+            <div class="text-right text-xs">
+              <div class="text-slate-500">학생 자가평가 평균: ${myAvg ? `<span class="font-medium" style="color:${LEVEL_COLORS[myAvg.idx]}">${myAvg.label}</span>` : '-'}</div>
+              <div class="text-slate-500 mt-0.5">선생님 평가 평균: ${tAvg ? `<span class="font-medium" style="color:${LEVEL_COLORS[tAvg.idx]}">${tAvg.label}</span>` : '-'}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="space-y-3">
+          ${passages.map(p => `
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div class="px-4 py-2.5 border-b border-slate-100 bg-slate-50 font-semibold text-sm">${esc(p.label)}</div>
+              <div class="divide-y divide-slate-100">
+                ${missions.map(m => {
+                  const e = (evalMap[p.id] || {})[m.id] || {};
+                  return `
+                    <div class="px-4 py-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <div class="sm:col-span-2 font-medium text-sm">${esc(m.name)}</div>
+                      <div class="sm:col-span-3 flex items-center gap-2">
+                        <span class="text-xs text-slate-500 shrink-0">학생</span>
+                        ${e.student_level != null ? levelBadge(e.student_level) : '<span class="text-xs text-slate-300">-</span>'}
+                      </div>
+                      <div class="sm:col-span-7">
+                        <div class="text-xs text-slate-500 mb-1">선생님 평가</div>
+                        ${levelSelector(e.teacher_level, `data-passage="${p.id}" data-mission="${m.id}" data-role="teacher"`)}
+                      </div>
+                    </div>`;
+                }).join('')}
+              </div>
+            </div>
+          `).join('')}
         </div>
       </div>
     </div>`;
   
-  document.getElementById('addPassage').onclick = async () => {
-    const number = parseInt(document.getElementById('pNum').value);
-    const title = document.getElementById('pTitle').value.trim();
-    const source = document.getElementById('pSource').value.trim();
-    if (!number || !title) { toast('번호와 제목은 필수예요', 'error'); return; }
-    const { error } = await sb.from('passages').insert({ exam_id: state.exam.id, number, title, source });
-    if (error) toast('저장 실패: ' + error.message, 'error');
-    else { toast('추가됐어요', 'success'); renderContentTab(); }
-  };
-  
-  document.querySelectorAll('.passage-card').forEach(el => {
-    el.onclick = async (ev) => {
-      if (ev.target.classList.contains('del-passage')) return;
-      state.selectedPassageId = el.dataset.id;
-      renderContentTab();
-    };
+  c.querySelectorAll('.student-pick').forEach(el => {
+    el.onclick = () => go('admin', { selectedStudentId: el.dataset.id });
   });
   
-  document.querySelectorAll('.del-passage').forEach(el => {
-    el.onclick = async (ev) => {
-      ev.stopPropagation();
-      if (!confirm('이 지문과 관련 과제를 삭제할까요?')) return;
-      await sb.from('passages').delete().eq('id', el.dataset.id);
-      if (state.selectedPassageId === el.dataset.id) state.selectedPassageId = null;
-      toast('삭제됐어요', 'success'); renderContentTab();
+  c.querySelectorAll('[data-role="teacher"] .lvl-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const grid = btn.parentElement;
+      const passageId = grid.dataset.passage;
+      const missionId = grid.dataset.mission;
+      const newLevel = parseInt(btn.dataset.level);
+      const currentEval = (evalMap[passageId] || {})[missionId] || {};
+      const finalLevel = currentEval.teacher_level === newLevel ? null : newLevel;
+      
+      const { error } = await sb.from('evaluations').upsert({
+        student_id: selectedStudent.id,
+        passage_id: passageId,
+        mission_id: missionId,
+        student_level: currentEval.student_level ?? null,
+        teacher_level: finalLevel,
+        student_updated_at: currentEval.student_updated_at || null,
+        teacher_updated_at: new Date().toISOString(),
+      }, { onConflict: 'student_id,passage_id,mission_id' });
+      
+      if (error) { toast('저장 실패', 'error'); return; }
+      renderEvaluateTab();
     };
   });
-  
-  if (state.selectedPassageId) {
-    const p = passages.find(x => x.id === state.selectedPassageId);
-    if (p) renderTaskPanel(p);
-  }
 }
 
-function renderTaskPanel(p) {
-  const panel = document.getElementById('taskPanel');
-  const tasks = (p.tasks || []).sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0));
-  panel.innerHTML = `
-    <div class="mb-4">
-      <div class="text-xs text-slate-500">${p.number}번 지문</div>
-      <div class="font-bold text-lg">${esc(p.title || '제목 없음')}</div>
+// ----- 질문/답변 (선생님) -----
+async function renderQuestionsTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  
+  const { data: students } = await sb.from('students').select('*').eq('exam_id', state.exam.id);
+  if (!students || !students.length) { c.innerHTML = `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">학생이 없어요</div>`; return; }
+  const studentIds = students.map(s => s.id);
+  const sMap = Object.fromEntries(students.map(s => [s.id, s]));
+  
+  const [pR, mR, qR] = await Promise.all([
+    sb.from('passages').select('*').eq('exam_id', state.exam.id),
+    sb.from('missions').select('*').eq('exam_id', state.exam.id),
+    sb.from('questions').select('*').in('student_id', studentIds).order('created_at', { ascending: false }),
+  ]);
+  for (const r of [pR, mR, qR]) { if (r.error) { showError(r.error, c); return; } }
+  
+  const passages = pR.data || [];
+  const missions = mR.data || [];
+  const allQuestions = qR.data || [];
+  const pMap = Object.fromEntries(passages.map(p => [p.id, p.label]));
+  const mMap = Object.fromEntries(missions.map(m => [m.id, m.name]));
+  
+  const filtered = state.questionFilter === 'unanswered'
+    ? allQuestions.filter(q => !q.answered_at)
+    : allQuestions;
+  
+  c.innerHTML = `
+    <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex gap-1 mb-4">
+      <button data-qf="unanswered" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='unanswered'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">미답변 (${allQuestions.filter(q => !q.answered_at).length})</button>
+      <button data-qf="all" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='all'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">전체 (${allQuestions.length})</button>
     </div>
-    <div class="border-t border-slate-100 pt-4">
-      <div class="font-semibold mb-3 text-sm">과제(유형) 추가</div>
-      <div class="flex gap-2 mb-4">
-        <input id="tName" placeholder="유형명 (예: ①요지)" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-        <input id="tPoints" type="number" step="0.1" placeholder="배점" class="w-24 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-        <button id="addTask" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
-      </div>
-      <div class="space-y-1">
-        ${tasks.length ? tasks.map(t => `
-          <div class="flex items-center justify-between px-3 py-2 hover:bg-slate-50 rounded-lg">
-            <div class="text-sm">${esc(t.type_name)}</div>
-            <div class="flex items-center gap-3">
-              ${t.points ? `<span class="text-xs text-slate-500">${t.points}점</span>` : ''}
-              <button data-id="${t.id}" class="del-task text-slate-400 hover:text-rose-600 text-xs">삭제</button>
+    
+    <div class="space-y-3">
+      ${filtered.length ? filtered.map(q => {
+        const student = sMap[q.student_id] || {};
+        return `
+          <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+              <div class="text-sm">
+                <span class="font-semibold">${esc(student.name || '?')}</span>
+                <span class="text-xs text-slate-500 ml-2">${esc(pMap[q.passage_id] || '?')}${q.mission_id ? ` · ${esc(mMap[q.mission_id] || '')}` : ''}</span>
+              </div>
+              <div class="text-xs text-slate-400">${esc(fmtDate(q.created_at))}</div>
             </div>
-          </div>
-        `).join('') : '<div class="text-sm text-slate-400 text-center py-6">과제가 없어요</div>'}
-      </div>
+            <div class="p-4">
+              <div class="text-xs text-indigo-600 font-medium mb-1">질문</div>
+              ${q.text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.text)}</div>` : ''}
+              ${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer mb-2" onclick="window.open('${esc(q.image_url)}', '_blank')">` : ''}
+              
+              <div class="mt-3 pt-3 border-t border-slate-100">
+                ${q.answer_text || q.answer_image_url ? `
+                  <div class="text-xs text-emerald-600 font-medium mb-1">답변 · ${esc(fmtDate(q.answered_at))}</div>
+                  ${q.answer_text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.answer_text)}</div>` : ''}
+                  ${q.answer_image_url ? `<img src="${esc(q.answer_image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer mb-2" onclick="window.open('${esc(q.answer_image_url)}', '_blank')">` : ''}
+                  <button class="re-answer-btn text-xs text-slate-500 hover:text-indigo-600 underline" data-id="${q.id}">답변 수정</button>
+                ` : `
+                  <textarea data-id="${q.id}" class="ans-text w-full border border-slate-300 rounded-lg p-2 text-sm mb-2 resize-none" rows="2" placeholder="답변을 입력해주세요"></textarea>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <input type="file" accept="image/*" data-id="${q.id}" class="ans-file text-xs">
+                    <button data-id="${q.id}" class="ans-submit bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded-lg">답변 등록</button>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>`;
+      }).join('') : `<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">${state.questionFilter==='unanswered'?'미답변 질문이 없어요':'질문이 없어요'}</div>`}
     </div>`;
   
-  document.getElementById('addTask').onclick = async () => {
-    const type_name = document.getElementById('tName').value.trim();
-    const points = parseFloat(document.getElementById('tPoints').value) || 0;
-    if (!type_name) { toast('유형명을 입력해주세요', 'error'); return; }
-    const sort_order = (tasks.length ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0) + 1;
-    const { error } = await sb.from('tasks').insert({ passage_id: p.id, type_name, points, sort_order });
-    if (error) toast('저장 실패: ' + error.message, 'error');
-    else { toast('추가됐어요', 'success'); renderContentTab(); }
-  };
+  c.querySelectorAll('.qf-btn').forEach(b => {
+    b.onclick = () => { state.questionFilter = b.dataset.qf; renderQuestionsTab(); };
+  });
   
-  document.querySelectorAll('.del-task').forEach(el => {
-    el.onclick = async () => {
-      await sb.from('tasks').delete().eq('id', el.dataset.id);
-      toast('삭제됐어요', 'success'); renderContentTab();
+  c.querySelectorAll('.ans-submit').forEach(btn => {
+    btn.onclick = async () => {
+      const qid = btn.dataset.id;
+      const text = c.querySelector(`textarea.ans-text[data-id="${qid}"]`).value.trim();
+      const fileInput = c.querySelector(`input.ans-file[data-id="${qid}"]`);
+      const file = fileInput?.files?.[0];
+      if (!text && !file) { toast('답변 내용이나 이미지를 입력해주세요', 'error'); return; }
+      
+      btn.disabled = true; btn.textContent = '저장 중...';
+      let imageUrl = null;
+      if (file) imageUrl = await uploadImage(file);
+      if (file && !imageUrl) { btn.disabled = false; btn.textContent = '답변 등록'; return; }
+      
+      const { error } = await sb.from('questions').update({
+        answer_text: text || null,
+        answer_image_url: imageUrl,
+        answered_at: new Date().toISOString(),
+      }).eq('id', qid);
+      
+      if (error) { toast('저장 실패: ' + error.message, 'error'); btn.disabled = false; btn.textContent = '답변 등록'; return; }
+      toast('답변 등록됐어요', 'success');
+      renderQuestionsTab();
+    };
+  });
+  
+  c.querySelectorAll('.re-answer-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('기존 답변을 지우고 새로 작성할까요?')) return;
+      await sb.from('questions').update({ answer_text: null, answer_image_url: null, answered_at: null }).eq('id', btn.dataset.id);
+      renderQuestionsTab();
     };
   });
 }
 
+// ----- 지문 관리 -----
+async function renderPassagesTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  const { data, error } = await sb.from('passages').select('*').eq('exam_id', state.exam.id).order('sort_order');
+  if (error) { showError(error, c); return; }
+  const passages = data || [];
+  
+  c.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="font-semibold mb-3">단일 지문 추가</div>
+        <div class="flex gap-2 mb-2">
+          <input id="pLabel" placeholder="지문명 (예: 교과서 1과)" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <button id="addOne" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+        </div>
+        <div class="text-xs text-slate-400">예: 교과서 1과, 교과서 2과, 모의고사 1번 등</div>
+      </div>
+      
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="font-semibold mb-3">일괄 추가 (모의고사 등)</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+          <input id="bPrefix" value="모의고사" placeholder="앞부분" class="border border-slate-300 rounded-lg px-3 py-2 text-sm sm:col-span-2">
+          <input id="bStart" type="number" value="1" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <input id="bEnd" type="number" value="12" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+        <div class="flex gap-2">
+          <input id="bSuffix" value="번" placeholder="뒷부분" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <button id="addBulk" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap">일괄 추가</button>
+        </div>
+        <div class="text-xs text-slate-400 mt-1">예: "모의고사 1번" ~ "모의고사 12번"</div>
+      </div>
+    </div>
+    
+    <div class="bg-white rounded-xl border border-slate-200 mt-4 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+        <div class="font-semibold text-sm">등록된 지문 (${passages.length}개)</div>
+      </div>
+      ${passages.length ? `<div class="divide-y divide-slate-100">
+        ${passages.map((p, i) => `
+          <div class="px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3 flex-1">
+              <span class="text-xs text-slate-400 w-6">${i+1}</span>
+              <input class="p-label flex-1 border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm" value="${esc(p.label)}" data-id="${p.id}">
+            </div>
+            <div class="flex items-center gap-1">
+              <button class="p-up text-slate-400 hover:text-slate-700 px-2 text-sm" data-id="${p.id}" data-idx="${i}">↑</button>
+              <button class="p-down text-slate-400 hover:text-slate-700 px-2 text-sm" data-id="${p.id}" data-idx="${i}">↓</button>
+              <button class="p-del text-slate-400 hover:text-rose-600 px-2 text-sm" data-id="${p.id}">삭제</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>` : '<div class="text-center py-8 text-slate-400 text-sm">지문이 없어요</div>'}
+    </div>`;
+  
+  document.getElementById('addOne').onclick = async () => {
+    const label = document.getElementById('pLabel').value.trim();
+    if (!label) return;
+    const sort_order = (passages.length ? Math.max(...passages.map(p => p.sort_order || 0)) : 0) + 1;
+    const { error } = await sb.from('passages').insert({ exam_id: state.exam.id, label, sort_order });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast('추가됐어요', 'success'); renderPassagesTab(); }
+  };
+  
+  document.getElementById('addBulk').onclick = async () => {
+    const prefix = document.getElementById('bPrefix').value.trim();
+    const suffix = document.getElementById('bSuffix').value.trim();
+    const start = parseInt(document.getElementById('bStart').value);
+    const end = parseInt(document.getElementById('bEnd').value);
+    if (isNaN(start) || isNaN(end) || start > end) { toast('시작/끝 번호를 확인해주세요', 'error'); return; }
+    if (end - start > 50) { toast('한 번에 최대 50개까지', 'error'); return; }
+    
+    const baseOrder = (passages.length ? Math.max(...passages.map(p => p.sort_order || 0)) : 0);
+    const items = [];
+    for (let i = start; i <= end; i++) {
+      const label = `${prefix} ${i}${suffix}`.trim();
+      items.push({ exam_id: state.exam.id, label, sort_order: baseOrder + (i - start + 1) });
+    }
+    const { error } = await sb.from('passages').insert(items);
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast(`${items.length}개 추가됐어요`, 'success'); renderPassagesTab(); }
+  };
+  
+  document.querySelectorAll('.p-label').forEach(input => {
+    input.onblur = async () => {
+      const newLabel = input.value.trim();
+      const old = passages.find(p => p.id === input.dataset.id);
+      if (!newLabel || newLabel === old?.label) return;
+      await sb.from('passages').update({ label: newLabel }).eq('id', input.dataset.id);
+      toast('수정됐어요', 'success');
+    };
+    input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
+  });
+  
+  document.querySelectorAll('.p-del').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('이 지문과 관련 평가/질문이 모두 삭제됩니다. 계속할까요?')) return;
+      await sb.from('passages').delete().eq('id', btn.dataset.id);
+      toast('삭제됐어요', 'success');
+      renderPassagesTab();
+    };
+  });
+  
+  const swap = async (i, j) => {
+    if (j < 0 || j >= passages.length) return;
+    const a = passages[i], b = passages[j];
+    await Promise.all([
+      sb.from('passages').update({ sort_order: b.sort_order }).eq('id', a.id),
+      sb.from('passages').update({ sort_order: a.sort_order }).eq('id', b.id),
+    ]);
+    renderPassagesTab();
+  };
+  document.querySelectorAll('.p-up').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) - 1));
+  document.querySelectorAll('.p-down').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) + 1));
+}
+
+// ----- 학생 관리 -----
 async function renderStudentsTab() {
   const c = document.getElementById('tabContent');
   c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
   const { data, error } = await sb.from('students').select('*').eq('exam_id', state.exam.id).order('name');
-  if (error) { c.innerHTML = `<div class="text-rose-600 p-4">에러: ${esc(error.message)}</div>`; return; }
+  if (error) { showError(error, c); return; }
   const students = data || [];
   
   c.innerHTML = `
     <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
-      <div class="font-semibold mb-3">학생 추가 (코드는 자동 생성됩니다)</div>
+      <div class="font-semibold mb-3">학생 추가 (코드는 자동 생성)</div>
       <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
         <input id="sName" placeholder="이름" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
         <input id="sSchool" placeholder="학교 (선택)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
@@ -516,8 +1062,11 @@ async function renderStudentsTab() {
         <tbody class="divide-y divide-slate-100">
           ${students.length ? students.map(s => `
             <tr>
-              <td class="px-4 py-3 font-medium">${esc(s.name)}</td>
-              <td class="px-4 py-3 text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</td>
+              <td class="px-4 py-3"><input class="s-name border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 font-medium" value="${esc(s.name)}" data-id="${s.id}"></td>
+              <td class="px-4 py-3 text-slate-500 text-xs">
+                <input class="s-school border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1" value="${esc(s.school || '')}" placeholder="학교" data-id="${s.id}" style="width:90px">
+                <input class="s-grade border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1" value="${esc(s.grade || '')}" placeholder="학년" data-id="${s.id}" style="width:60px">
+              </td>
               <td class="px-4 py-3"><span class="font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-semibold">${esc(s.code)}</span></td>
               <td class="px-4 py-3 text-right"><button data-id="${s.id}" class="del-student text-slate-400 hover:text-rose-600 text-xs">삭제</button></td>
             </tr>
@@ -542,87 +1091,101 @@ async function renderStudentsTab() {
     else { toast(`코드: ${code}`, 'success'); renderStudentsTab(); }
   };
   
+  ['s-name', 's-school', 's-grade'].forEach(cls => {
+    document.querySelectorAll('.' + cls).forEach(input => {
+      input.onblur = async () => {
+        const field = cls.split('-')[1];
+        const old = students.find(s => s.id === input.dataset.id);
+        const newVal = input.value.trim();
+        if (newVal === (old?.[field] || '')) return;
+        if (field === 'name' && !newVal) { input.value = old.name; return; }
+        await sb.from('students').update({ [field]: newVal || null }).eq('id', input.dataset.id);
+      };
+      input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
+    });
+  });
+  
   document.querySelectorAll('.del-student').forEach(el => {
     el.onclick = async () => {
-      if (!confirm('이 학생과 진도 기록을 삭제할까요?')) return;
+      if (!confirm('이 학생과 평가/질문 기록을 모두 삭제할까요?')) return;
       await sb.from('students').delete().eq('id', el.dataset.id);
-      toast('삭제됐어요', 'success'); renderStudentsTab();
+      toast('삭제됐어요', 'success');
+      renderStudentsTab();
     };
   });
 }
 
-async function renderDashboardTab() {
+// ----- 미션 관리 -----
+async function renderMissionsTab() {
   const c = document.getElementById('tabContent');
   c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
-  
-  const [sRes, pRes, prRes] = await Promise.all([
-    sb.from('students').select('*').eq('exam_id', state.exam.id).order('name'),
-    sb.from('passages').select('*, tasks(id)').eq('exam_id', state.exam.id).order('number'),
-    sb.from('progress').select('*')
-  ]);
-  
-  if (sRes.error || pRes.error || prRes.error) {
-    c.innerHTML = `<div class="text-rose-600 p-4">에러: ${esc(sRes.error?.message || pRes.error?.message || prRes.error?.message)}</div>`;
-    return;
-  }
-  
-  const students = sRes.data || [];
-  const passages = pRes.data || [];
-  const progress = prRes.data || [];
-  
-  const allTaskIds = new Set(passages.flatMap(p => (p.tasks || []).map(t => t.id)));
-  
-  // Build student → completed task ids
-  const sMap = {};
-  students.forEach(s => sMap[s.id] = new Set());
-  progress.forEach(p => {
-    if (p.completed && sMap[p.student_id] && allTaskIds.has(p.task_id)) sMap[p.student_id].add(p.task_id);
-  });
-  
-  // Per-passage stats
-  const passageStats = passages.map(p => ({
-    ...p,
-    taskIds: new Set((p.tasks || []).map(t => t.id))
-  }));
-  
-  const totalTasks = allTaskIds.size;
+  const { data, error } = await sb.from('missions').select('*').eq('exam_id', state.exam.id).order('sort_order');
+  if (error) { showError(error, c); return; }
+  const missions = data || [];
   
   c.innerHTML = `
-    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead class="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th class="text-left px-4 py-3 font-semibold sticky left-0 bg-slate-50 z-10">학생</th>
-              <th class="text-center px-4 py-3 font-semibold">전체 %</th>
-              ${passageStats.map(p => `<th class="text-center px-2 py-3 font-medium text-xs text-slate-600 whitespace-nowrap">${p.number}번</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            ${students.length ? students.map(s => {
-              const done = sMap[s.id].size;
-              const totalPct = totalTasks ? Math.round(done / totalTasks * 100) : 0;
-              const totalColor = totalPct === 100 ? 'text-emerald-600 bg-emerald-50' : totalPct >= 70 ? 'text-indigo-600 bg-indigo-50' : totalPct >= 40 ? 'text-amber-600 bg-amber-50' : 'text-slate-500 bg-slate-50';
-              return `
-                <tr class="hover:bg-slate-50">
-                  <td class="px-4 py-3 font-medium sticky left-0 bg-white">${esc(s.name)}</td>
-                  <td class="px-4 py-3 text-center"><span class="inline-block ${totalColor} px-2.5 py-1 rounded-md font-semibold">${totalPct}%</span><div class="text-xs text-slate-400 mt-0.5">${done}/${totalTasks}</div></td>
-                  ${passageStats.map(p => {
-                    const pTotal = p.taskIds.size;
-                    if (!pTotal) return '<td class="px-2 py-3 text-center text-slate-300">-</td>';
-                    let pDone = 0;
-                    for (const tid of sMap[s.id]) if (p.taskIds.has(tid)) pDone++;
-                    const pPct = Math.round(pDone/pTotal*100);
-                    const cls = pPct === 100 ? 'bg-emerald-100 text-emerald-700' : pPct > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-50 text-slate-400';
-                    return `<td class="px-2 py-3 text-center"><span class="${cls} text-xs px-1.5 py-0.5 rounded font-medium">${pDone}/${pTotal}</span></td>`;
-                  }).join('')}
-                </tr>`;
-            }).join('') : '<tr><td colspan="' + (passageStats.length + 2) + '" class="text-center py-12 text-slate-400">학생이 없어요</td></tr>'}
-          </tbody>
-        </table>
+    <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+      <div class="font-semibold mb-1">미션 항목</div>
+      <div class="text-xs text-slate-500 mb-3">시험 만들 때 기본 4개(이해도/워크북/변형문제/서술형)가 자동 생성됩니다. 필요시 추가/수정/삭제 가능</div>
+      <div class="flex gap-2">
+        <input id="mName" placeholder="새 미션명" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <button id="addMission" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
       </div>
     </div>
-    <div class="text-xs text-slate-400 mt-3">전체 과제: ${totalTasks}개 · 학생 ${students.length}명</div>`;
+    
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      ${missions.length ? `<div class="divide-y divide-slate-100">
+        ${missions.map((m, i) => `
+          <div class="px-4 py-3 flex items-center gap-3">
+            <span class="text-xs text-slate-400 w-6">${i+1}</span>
+            <input class="m-name flex-1 border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm" value="${esc(m.name)}" data-id="${m.id}">
+            <button class="m-up text-slate-400 hover:text-slate-700 px-2 text-sm" data-idx="${i}">↑</button>
+            <button class="m-down text-slate-400 hover:text-slate-700 px-2 text-sm" data-idx="${i}">↓</button>
+            <button class="m-del text-slate-400 hover:text-rose-600 px-2 text-sm" data-id="${m.id}">삭제</button>
+          </div>
+        `).join('')}
+      </div>` : '<div class="text-center py-8 text-slate-400 text-sm">미션이 없어요</div>'}
+    </div>`;
+  
+  document.getElementById('addMission').onclick = async () => {
+    const name = document.getElementById('mName').value.trim();
+    if (!name) return;
+    const sort_order = (missions.length ? Math.max(...missions.map(m => m.sort_order || 0)) : 0) + 1;
+    const { error } = await sb.from('missions').insert({ exam_id: state.exam.id, name, sort_order });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast('추가됐어요', 'success'); renderMissionsTab(); }
+  };
+  
+  document.querySelectorAll('.m-name').forEach(input => {
+    input.onblur = async () => {
+      const old = missions.find(m => m.id === input.dataset.id);
+      const newName = input.value.trim();
+      if (!newName || newName === old?.name) { input.value = old?.name || ''; return; }
+      await sb.from('missions').update({ name: newName }).eq('id', input.dataset.id);
+    };
+    input.onkeydown = e => { if (e.key === 'Enter') input.blur(); };
+  });
+  
+  document.querySelectorAll('.m-del').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('이 미션과 관련 평가가 모두 삭제됩니다. 계속할까요?')) return;
+      await sb.from('missions').delete().eq('id', btn.dataset.id);
+      toast('삭제됐어요', 'success');
+      renderMissionsTab();
+    };
+  });
+  
+  const swap = async (i, j) => {
+    if (j < 0 || j >= missions.length) return;
+    const a = missions[i], b = missions[j];
+    await Promise.all([
+      sb.from('missions').update({ sort_order: b.sort_order }).eq('id', a.id),
+      sb.from('missions').update({ sort_order: a.sort_order }).eq('id', b.id),
+    ]);
+    renderMissionsTab();
+  };
+  document.querySelectorAll('.m-up').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) - 1));
+  document.querySelectorAll('.m-down').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) + 1));
 }
 
 // ===== 시작 =====
