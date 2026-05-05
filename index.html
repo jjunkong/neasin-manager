@@ -58,6 +58,40 @@ const genCode = () => {
 };
 const fmtDate = (d) => d ? new Date(d).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
+function dDay(examDate) {
+  if (!examDate) return null;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exam = new Date(examDate); exam.setHours(0,0,0,0);
+  const diff = Math.round((exam - today) / 86400000);
+  if (diff > 0) return { text: `D-${diff}`, days: diff, urgent: diff <= 7, past: false };
+  if (diff === 0) return { text: 'D-DAY', days: 0, urgent: true, past: false };
+  return { text: `D+${-diff}`, days: diff, urgent: false, past: true };
+}
+
+function dDayBadge(examDate, big=false) {
+  const d = dDay(examDate);
+  if (!d) return '';
+  const colorClass = d.past ? 'bg-slate-100 text-slate-500' : d.urgent ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700';
+  if (big) return `<span class="inline-flex items-center justify-center font-bold rounded-lg px-3 py-1.5 text-base ${colorClass}">${d.text}</span>`;
+  return `<span class="inline-flex items-center justify-center font-semibold rounded-md px-2 py-0.5 text-xs ${colorClass}">${d.text}</span>`;
+}
+
+function logoHeader() {
+  return `
+    <div class="flex items-center gap-2.5 cursor-pointer" id="logoLink">
+      <div class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-xs tracking-tight shrink-0">KKJ</div>
+      <div class="leading-tight">
+        <div class="font-bold text-slate-900 text-sm">김기준영어학원</div>
+        <div class="text-xs text-slate-500">내신 진도 관리</div>
+      </div>
+    </div>`;
+}
+
+function attachLogoLink() {
+  const el = document.getElementById('logoLink');
+  if (el) el.onclick = () => { if (confirm('처음 화면으로 돌아갈까요?')) go('entry'); };
+}
+
 function toast(msg, type='info') {
   const t = document.createElement('div');
   const colors = { info: 'bg-slate-800', success: 'bg-emerald-600', error: 'bg-rose-600' };
@@ -135,7 +169,8 @@ function renderEntry() {
     <div class="min-h-screen flex items-center justify-center p-6">
       <div class="w-full max-w-md">
         <div class="text-center mb-10">
-          <div class="text-3xl font-bold text-slate-900 mb-2">김기준영어학원</div>
+          <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl text-white font-bold mb-4">KKJ</div>
+          <div class="text-2xl font-bold text-slate-900 mb-1">김기준영어학원</div>
           <div class="text-slate-500 text-sm">내신 진도 관리</div>
         </div>
         <div class="space-y-3">
@@ -242,16 +277,24 @@ async function renderStudent() {
   app.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 sm:p-6 pb-24">
       <header class="mb-5">
-        <div class="flex justify-between items-start mb-4">
-          <div>
-            <div class="text-xs text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
-            <div class="text-xl font-bold">${esc(s.name)} 학생</div>
-            <div class="text-sm text-slate-500 mt-0.5">${esc(exam?.name || '시험 미배정')}</div>
-          </div>
-          <button id="logout" class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1 border border-slate-200 rounded-lg">로그아웃</button>
+        <div class="flex justify-between items-center mb-4">
+          ${logoHeader()}
+          <button id="logout" class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
         </div>
         
-        <div class="grid grid-cols-2 gap-2 mb-4">
+        <div class="bg-white rounded-2xl border border-slate-200 p-4 mb-3">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-xs text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
+              <div class="text-xl font-bold">${esc(s.name)} 학생</div>
+              <div class="text-sm text-slate-600 mt-1">${esc(exam?.name || '시험 미배정')}</div>
+              ${exam?.exam_date ? `<div class="text-xs text-slate-400 mt-0.5">시험일: ${exam.exam_date}</div>` : ''}
+            </div>
+            ${exam?.exam_date ? `<div>${dDayBadge(exam.exam_date, true)}</div>` : ''}
+          </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-2 mb-3">
           <div class="bg-white rounded-xl border border-slate-200 p-3">
             <div class="text-xs text-slate-500 mb-1">내 평가 평균</div>
             <div class="text-lg font-bold">${myAvg ? `<span style="color:${LEVEL_COLORS[myAvg.idx]}">${myAvg.label}</span>` : '<span class="text-slate-300">-</span>'}</div>
@@ -276,6 +319,7 @@ async function renderStudent() {
       <div id="studentMain"></div>
     </div>`;
   
+  attachLogoLink();
   document.getElementById('logout').onclick = () => go('entry');
   document.querySelectorAll('.stab-btn').forEach(b => {
     b.onclick = () => { state.studentTab = b.dataset.stab; renderStudent(); };
@@ -484,12 +528,28 @@ async function renderExamList() {
   app.innerHTML = `
     <div class="max-w-4xl mx-auto p-4 sm:p-6">
       <div class="flex justify-between items-center mb-5">
-        <div>
-          <div class="text-xs text-slate-500 mb-1">관리자</div>
-          <h1 class="text-2xl font-bold">시험 목록</h1>
-        </div>
+        ${logoHeader()}
         <button id="logout" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
       </div>
+      
+      ${(() => {
+        const upcoming = exams.filter(e => e.exam_date && !dDay(e.exam_date)?.past).sort((a,b) => new Date(a.exam_date) - new Date(b.exam_date));
+        const nearest = upcoming[0];
+        if (!nearest) return '';
+        return `
+          <div class="bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-2xl p-5 mb-5 text-white">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div class="text-xs text-indigo-100 mb-1">가장 가까운 시험</div>
+                <div class="font-bold text-lg">${esc(nearest.name)}</div>
+                <div class="text-sm text-indigo-100">${esc(nearest.school)} ${esc(nearest.grade)} · ${nearest.exam_date}</div>
+              </div>
+              <div class="text-3xl font-bold">${dDay(nearest.exam_date).text}</div>
+            </div>
+          </div>`;
+      })()}
+      
+      <div class="mb-2"><h1 class="text-xl font-bold">시험 목록</h1></div>
       
       <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
         <div class="font-semibold mb-3">새 시험 추가</div>
@@ -497,25 +557,36 @@ async function renderExamList() {
           <input id="newName" placeholder="시험명 (예: 1학기 중간)" class="border border-slate-300 rounded-lg px-3 py-2 sm:col-span-2">
           <input id="newSchool" placeholder="학교 (예: 미강고)" class="border border-slate-300 rounded-lg px-3 py-2">
           <input id="newGrade" placeholder="학년 (예: 3)" class="border border-slate-300 rounded-lg px-3 py-2">
-          <input id="newDate" type="date" class="border border-slate-300 rounded-lg px-3 py-2 sm:col-span-3">
-          <button id="addExam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium">추가</button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-2">
+          <div class="sm:col-span-3">
+            <label class="text-xs text-slate-500 block mb-1">시험 시작일 (D-day 표시용)</label>
+            <input id="newDate" type="date" class="border border-slate-300 rounded-lg px-3 py-2 w-full">
+          </div>
+          <button id="addExam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium sm:self-end">추가</button>
         </div>
         <div class="text-xs text-slate-400 mt-2">시험 추가 시 미션 4개(이해도/워크북/변형문제/서술형)가 자동 생성돼요</div>
       </div>
       
       <div class="space-y-2">
-        ${exams.length ? exams.map(e => `
-          <div class="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center hover:border-indigo-300 transition">
-            <div class="flex-1 cursor-pointer exam-row" data-id="${e.id}">
-              <div class="font-semibold">${esc(e.name)}</div>
-              <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
-            </div>
-            <button data-id="${e.id}" class="del-exam text-slate-400 hover:text-rose-600 text-sm px-3">삭제</button>
-          </div>
-        `).join('') : '<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">시험이 없어요. 위에서 추가해주세요.</div>'}
+        ${exams.length ? exams.map(e => {
+          const dd = dDay(e.exam_date);
+          return `
+            <div class="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center hover:border-indigo-300 transition gap-3">
+              <div class="flex-1 cursor-pointer exam-row min-w-0" data-id="${e.id}">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <div class="font-semibold">${esc(e.name)}</div>
+                  ${dd ? dDayBadge(e.exam_date, false) : ''}
+                </div>
+                <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
+              </div>
+              <button data-id="${e.id}" class="del-exam text-slate-400 hover:text-rose-600 text-sm px-3 shrink-0">삭제</button>
+            </div>`;
+        }).join('') : '<div class="text-center py-12 bg-white rounded-xl border border-slate-200 text-slate-400">시험이 없어요. 위에서 추가해주세요.</div>'}
       </div>
     </div>`;
   
+  attachLogoLink();
   document.getElementById('logout').onclick = () => go('entry');
   document.getElementById('addExam').onclick = async () => {
     const name = document.getElementById('newName').value.trim();
@@ -553,15 +624,23 @@ async function renderExamList() {
 
 async function renderExamDetail() {
   const e = state.exam;
+  const dd = dDay(e.exam_date);
   app.innerHTML = `
     <div class="max-w-6xl mx-auto p-4 sm:p-6 pb-24">
-      <div class="flex justify-between items-start mb-5">
+      <div class="flex justify-between items-center mb-4">
+        ${logoHeader()}
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
+      </div>
+      
+      <div class="flex justify-between items-start mb-5 gap-3 flex-wrap">
         <div>
           <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-2">← 시험 목록</button>
-          <h1 class="text-2xl font-bold">${esc(e.name)}</h1>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-2xl font-bold">${esc(e.name)}</h1>
+            ${dd ? dDayBadge(e.exam_date, true) : ''}
+          </div>
           <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
         </div>
-        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
       </div>
       
       <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex flex-wrap gap-1 mb-5">
@@ -580,6 +659,7 @@ async function renderExamDetail() {
       <div id="tabContent"></div>
     </div>`;
   
+  attachLogoLink();
   document.getElementById('back').onclick = () => go('admin', { exam: null });
   document.getElementById('logout').onclick = () => go('entry');
   document.querySelectorAll('.tab-btn').forEach(b => {
@@ -934,18 +1014,41 @@ async function renderPassagesTab() {
       </div>
       
       <div class="bg-white rounded-xl border border-slate-200 p-5">
-        <div class="font-semibold mb-3">일괄 추가 (모의고사 등)</div>
+        <div class="font-semibold mb-3">모의고사 일괄 추가</div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
-          <input id="bPrefix" value="모의고사" placeholder="앞부분" class="border border-slate-300 rounded-lg px-3 py-2 text-sm sm:col-span-2">
-          <input id="bStart" type="number" value="1" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-          <input id="bEnd" type="number" value="12" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <div>
+            <label class="text-xs text-slate-500 block mb-0.5">연도(YY)</label>
+            <input id="moYear" type="number" min="0" max="99" value="${new Date().getFullYear() % 100}" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 block mb-0.5">월</label>
+            <input id="moMonth" type="number" min="1" max="12" value="6" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 block mb-0.5">시작 번호</label>
+            <input id="moStart" type="number" value="1" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-slate-500 block mb-0.5">끝 번호</label>
+            <input id="moEnd" type="number" value="12" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          </div>
         </div>
-        <div class="flex gap-2">
-          <input id="bSuffix" value="번" placeholder="뒷부분" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-          <button id="addBulk" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium whitespace-nowrap">일괄 추가</button>
-        </div>
-        <div class="text-xs text-slate-400 mt-1">예: "모의고사 1번" ~ "모의고사 12번"</div>
+        <button id="addMo" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">일괄 추가</button>
+        <div class="text-xs text-slate-400 mt-1.5">예: "26년 6월 모의고사 1번" ~ "26년 6월 모의고사 12번"</div>
       </div>
+    </div>
+    
+    <div class="bg-white rounded-xl border border-slate-200 p-4 mb-4">
+      <details>
+        <summary class="text-sm text-slate-600 cursor-pointer hover:text-slate-900 font-medium">자유 형식 일괄 추가 (모의고사 외)</summary>
+        <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <input id="bPrefix" placeholder="앞부분 (예: 교과서)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm sm:col-span-2">
+          <input id="bSuffix" value="과" placeholder="뒷부분" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <button id="addBulk" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+          <input id="bStart" type="number" value="1" placeholder="시작" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+          <input id="bEnd" type="number" value="5" placeholder="끝" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        </div>
+      </details>
     </div>
     
     <div class="bg-white rounded-xl border border-slate-200 mt-4 overflow-hidden">
@@ -988,18 +1091,38 @@ async function renderPassagesTab() {
     else { toast('추가됐어요', 'success'); renderPassagesTab(); }
   };
   
+  document.getElementById('addMo').onclick = async () => {
+    const year = parseInt(document.getElementById('moYear').value);
+    const month = parseInt(document.getElementById('moMonth').value);
+    const start = parseInt(document.getElementById('moStart').value);
+    const end = parseInt(document.getElementById('moEnd').value);
+    if (isNaN(year) || isNaN(month) || isNaN(start) || isNaN(end) || start > end) { toast('값을 확인해주세요', 'error'); return; }
+    if (end - start > 50) { toast('한 번에 최대 50개까지', 'error'); return; }
+    
+    const baseOrder = passages.length ? Math.max(...passages.map(p => p.sort_order || 0)) : 0;
+    const items = [];
+    for (let i = start; i <= end; i++) {
+      const label = `${year}년 ${month}월 모의고사 ${i}번`;
+      items.push({ exam_id: state.exam.id, label, sort_order: baseOrder + (i - start + 1) });
+    }
+    const { error } = await sb.from('passages').insert(items);
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast(`${items.length}개 추가됐어요`, 'success'); renderPassagesTab(); }
+  };
+  
   document.getElementById('addBulk').onclick = async () => {
     const prefix = document.getElementById('bPrefix').value.trim();
     const suffix = document.getElementById('bSuffix').value.trim();
     const start = parseInt(document.getElementById('bStart').value);
     const end = parseInt(document.getElementById('bEnd').value);
+    if (!prefix && !suffix) { toast('앞부분 또는 뒷부분을 입력해주세요', 'error'); return; }
     if (isNaN(start) || isNaN(end) || start > end) { toast('시작/끝 번호를 확인해주세요', 'error'); return; }
     if (end - start > 50) { toast('한 번에 최대 50개까지', 'error'); return; }
     
     const baseOrder = (passages.length ? Math.max(...passages.map(p => p.sort_order || 0)) : 0);
     const items = [];
     for (let i = start; i <= end; i++) {
-      const label = `${prefix} ${i}${suffix}`.trim();
+      const label = `${prefix} ${i}${suffix}`.trim().replace(/\s+/g, ' ');
       items.push({ exam_id: state.exam.id, label, sort_order: baseOrder + (i - start + 1) });
     }
     const { error } = await sb.from('passages').insert(items);
