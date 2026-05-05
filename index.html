@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>김기준영어학원 - 내신 진도 관리</title>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { font-family: 'Pretendard', -apple-system, sans-serif; }
+  .scroll-shadow { background:
+    linear-gradient(white 30%, rgba(255,255,255,0)) center top,
+    linear-gradient(rgba(255,255,255,0), white 70%) center bottom,
+    radial-gradient(farthest-side at 50% 0, rgba(0,0,0,0.08), rgba(0,0,0,0)) center top,
+    radial-gradient(farthest-side at 50% 100%, rgba(0,0,0,0.08), rgba(0,0,0,0)) center bottom;
+    background-size: 100% 40px, 100% 40px, 100% 14px, 100% 14px;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2); }
+  .check-task { transition: all 0.15s; }
+  .check-task:hover { background: #f8fafc; }
+</style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+<div id="app"></div>
+
+<script>
+// ===== 설정 =====
+const SUPABASE_URL = 'https://tsgzonowqenelrwehoei.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_uXHDQGdJgrjQQTgpJDXy-g_8bUxr2UK';
+const ADMIN_PASSWORD = 'kkj2026'; // ⚠️ 비밀번호 - 원하시면 여기를 변경하세요
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ===== 상태 =====
+const state = {
+  view: 'entry',
+  exam: null,
+  examTab: 'content',
+  student: null,
+  passages: [],
+  students: [],
+  progress: [],
+  exams: [],
+  selectedPassageId: null,
+};
+
+const app = document.getElementById('app');
+
+// ===== 유틸 =====
+const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const genCode = () => {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+};
+const toast = (msg, type='info') => {
+  const t = document.createElement('div');
+  const colors = { info: 'bg-slate-800', success: 'bg-emerald-600', error: 'bg-rose-600' };
+  t.className = `fixed top-6 left-1/2 -translate-x-1/2 ${colors[type]} text-white px-5 py-2.5 rounded-lg shadow-lg z-50 text-sm font-medium`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2200);
+};
+
+// ===== 라우팅 =====
+function go(view, data={}) {
+  Object.assign(state, data);
+  state.view = view;
+  render();
+}
+
+async function render() {
+  if (state.view === 'entry') renderEntry();
+  else if (state.view === 'adminLogin') renderAdminLogin();
+  else if (state.view === 'admin') await renderAdmin();
+  else if (state.view === 'studentLogin') renderStudentLogin();
+  else if (state.view === 'student') await renderStudent();
+}
+
+// ===== 시작 화면 =====
+function renderEntry() {
+  app.innerHTML = `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="w-full max-w-md">
+        <div class="text-center mb-10">
+          <div class="text-3xl font-bold text-slate-900 mb-2">김기준영어학원</div>
+          <div class="text-slate-500 text-sm">내신 진도 관리 시스템</div>
+        </div>
+        <div class="space-y-3">
+          <button id="btnAdmin" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-semibold shadow-sm transition">
+            선생님 로그인
+          </button>
+          <button id="btnStudent" class="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 py-4 rounded-xl font-semibold transition">
+            학생 코드 입력
+          </button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('btnAdmin').onclick = () => go('adminLogin');
+  document.getElementById('btnStudent').onclick = () => go('studentLogin');
+}
+
+// ===== 선생님 로그인 =====
+function renderAdminLogin() {
+  app.innerHTML = `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+        <div class="mb-6">
+          <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-4">← 뒤로</button>
+          <h2 class="text-xl font-bold">선생님 로그인</h2>
+        </div>
+        <input id="pw" type="password" placeholder="비밀번호" class="w-full border border-slate-300 rounded-lg px-4 py-3 mb-3" autofocus>
+        <button id="login" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold">들어가기</button>
+      </div>
+    </div>`;
+  document.getElementById('back').onclick = () => go('entry');
+  const submit = () => {
+    if (document.getElementById('pw').value === ADMIN_PASSWORD) go('admin');
+    else toast('비밀번호가 틀렸어요', 'error');
+  };
+  document.getElementById('login').onclick = submit;
+  document.getElementById('pw').onkeydown = e => e.key === 'Enter' && submit();
+}
+
+// ===== 학생 로그인 =====
+function renderStudentLogin() {
+  app.innerHTML = `
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+        <div class="mb-6">
+          <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-4">← 뒤로</button>
+          <h2 class="text-xl font-bold">학생 코드 입력</h2>
+        </div>
+        <input id="code" type="text" placeholder="예: ABC123" class="w-full border border-slate-300 rounded-lg px-4 py-3 mb-3 text-center font-mono text-lg uppercase tracking-widest" autofocus maxlength="10">
+        <button id="login" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold">들어가기</button>
+      </div>
+    </div>`;
+  document.getElementById('back').onclick = () => go('entry');
+  const submit = async () => {
+    const code = document.getElementById('code').value.trim().toUpperCase();
+    if (!code) return;
+    const { data, error } = await sb.from('students').select('*').eq('code', code).maybeSingle();
+    if (error || !data) { toast('코드를 찾을 수 없어요', 'error'); return; }
+    go('student', { student: data });
+  };
+  document.getElementById('login').onclick = submit;
+  document.getElementById('code').onkeydown = e => e.key === 'Enter' && submit();
+}
+
+// ===== 학생 화면 =====
+async function renderStudent() {
+  const s = state.student;
+  app.innerHTML = `<div class="text-center py-20 text-slate-400">불러오는 중...</div>`;
+  
+  // 학생 시험 정보 + 지문 + 과제 + 진도
+  const { data: exam } = await sb.from('exams').select('*').eq('id', s.exam_id).single();
+  const { data: passages } = await sb.from('passages').select('*, tasks(*)').eq('exam_id', s.exam_id).order('number');
+  const { data: progress } = await sb.from('progress').select('*').eq('student_id', s.id);
+  
+  const doneIds = new Set(progress.filter(p => p.completed).map(p => p.task_id));
+  const allTasks = passages.flatMap(p => p.tasks);
+  const totalPct = allTasks.length ? Math.round(doneIds.size / allTasks.length * 100) : 0;
+  
+  app.innerHTML = `
+    <div class="max-w-3xl mx-auto p-4 sm:p-6">
+      <div class="flex justify-between items-center mb-5">
+        <div>
+          <div class="text-sm text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
+          <div class="text-xl font-bold">${esc(s.name)} 학생</div>
+        </div>
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
+      </div>
+      
+      <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-5">
+        <div class="text-sm text-slate-500 mb-1">${esc(exam?.name || '')}</div>
+        <div class="flex items-baseline gap-3 mb-3">
+          <div class="text-4xl font-bold text-indigo-600">${totalPct}<span class="text-2xl">%</span></div>
+          <div class="text-sm text-slate-500">${doneIds.size} / ${allTasks.length} 완료</div>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+          <div class="bg-indigo-600 h-2.5 transition-all" style="width:${totalPct}%"></div>
+        </div>
+      </div>
+      
+      <div class="space-y-3">
+        ${passages.map(p => {
+          const tasks = (p.tasks || []).sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0));
+          const done = tasks.filter(t => doneIds.has(t.id)).length;
+          const pct = tasks.length ? Math.round(done/tasks.length*100) : 0;
+          return `
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                <div>
+                  <span class="inline-block bg-slate-100 text-slate-700 text-xs px-2 py-0.5 rounded font-medium mr-2">${p.number}번</span>
+                  <span class="font-semibold">${esc(p.title || '제목 없음')}</span>
+                </div>
+                <div class="text-sm font-medium ${pct === 100 ? 'text-emerald-600' : 'text-slate-500'}">${done}/${tasks.length} · ${pct}%</div>
+              </div>
+              ${tasks.length ? `<div class="divide-y divide-slate-100">
+                ${tasks.map(t => `
+                  <label class="check-task flex items-center px-4 py-3 cursor-pointer">
+                    <input type="checkbox" class="task-cb w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" data-task-id="${t.id}" ${doneIds.has(t.id) ? 'checked' : ''}>
+                    <span class="ml-3 ${doneIds.has(t.id) ? 'text-slate-400 line-through' : 'text-slate-800'}">${esc(t.type_name)}</span>
+                    ${t.points ? `<span class="ml-auto text-xs text-slate-400">${t.points}점</span>` : ''}
+                  </label>
+                `).join('')}
+              </div>` : `<div class="p-4 text-sm text-slate-400">과제가 없어요</div>`}
+            </div>`;
+        }).join('') || '<div class="text-center py-12 text-slate-400">등록된 지문이 없어요</div>'}
+      </div>
+    </div>`;
+  
+  document.getElementById('logout').onclick = () => go('entry');
+  document.querySelectorAll('.task-cb').forEach(cb => {
+    cb.onchange = async () => {
+      const tid = cb.dataset.taskId;
+      const completed = cb.checked;
+      const { error } = await sb.from('progress').upsert({
+        student_id: s.id, task_id: tid, completed,
+        completed_at: completed ? new Date().toISOString() : null
+      }, { onConflict: 'student_id,task_id' });
+      if (error) { toast('저장 실패', 'error'); cb.checked = !completed; }
+      else { renderStudent(); }
+    };
+  });
+}
+
+// ===== 관리자 화면 =====
+async function renderAdmin() {
+  if (!state.exam) {
+    await renderExamList();
+  } else {
+    await renderExamDetail();
+  }
+}
+
+async function renderExamList() {
+  app.innerHTML = `<div class="text-center py-20 text-slate-400">불러오는 중...</div>`;
+  const { data: exams } = await sb.from('exams').select('*').order('created_at', { ascending: false });
+  state.exams = exams || [];
+  
+  app.innerHTML = `
+    <div class="max-w-5xl mx-auto p-4 sm:p-6">
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <div class="text-xs text-slate-500 mb-1">관리자 화면</div>
+          <h1 class="text-2xl font-bold">시험 목록</h1>
+        </div>
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
+      </div>
+      
+      <div class="bg-white rounded-xl border border-slate-200 p-5 mb-5">
+        <div class="font-semibold mb-3">새 시험 추가</div>
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <input id="newName" placeholder="시험명 (예: 1학기 중간)" class="border border-slate-300 rounded-lg px-3 py-2 sm:col-span-2">
+          <input id="newSchool" placeholder="학교 (예: 미강고)" class="border border-slate-300 rounded-lg px-3 py-2">
+          <input id="newGrade" placeholder="학년 (예: 3)" class="border border-slate-300 rounded-lg px-3 py-2">
+          <input id="newDate" type="date" class="border border-slate-300 rounded-lg px-3 py-2 sm:col-span-3">
+          <button id="addExam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium">추가</button>
+        </div>
+      </div>
+      
+      <div class="space-y-2">
+        ${exams.length ? exams.map(e => `
+          <div class="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center hover:border-indigo-300 transition">
+            <div class="flex-1 cursor-pointer exam-row" data-id="${e.id}">
+              <div class="font-semibold">${esc(e.name)}</div>
+              <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
+            </div>
+            <button data-id="${e.id}" class="del-exam text-slate-400 hover:text-rose-600 text-sm px-3">삭제</button>
+          </div>
+        `).join('') : '<div class="text-center py-12 text-slate-400">시험이 없어요. 위에서 추가해주세요.</div>'}
+      </div>
+    </div>`;
+  
+  document.getElementById('logout').onclick = () => go('entry');
+  document.getElementById('addExam').onclick = async () => {
+    const name = document.getElementById('newName').value.trim();
+    const school = document.getElementById('newSchool').value.trim();
+    const grade = document.getElementById('newGrade').value.trim();
+    const exam_date = document.getElementById('newDate').value || null;
+    if (!name || !school || !grade) { toast('시험명/학교/학년은 필수예요', 'error'); return; }
+    const { error } = await sb.from('exams').insert({ name, school, grade, exam_date });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast('추가됐어요', 'success'); renderExamList(); }
+  };
+  document.querySelectorAll('.exam-row').forEach(el => {
+    el.onclick = async () => {
+      const exam = exams.find(e => e.id === el.dataset.id);
+      go('admin', { exam, examTab: 'content' });
+    };
+  });
+  document.querySelectorAll('.del-exam').forEach(el => {
+    el.onclick = async () => {
+      if (!confirm('이 시험과 관련된 모든 지문/과제/학생/진도가 삭제됩니다. 계속할까요?')) return;
+      await sb.from('exams').delete().eq('id', el.dataset.id);
+      toast('삭제됐어요', 'success'); renderExamList();
+    };
+  });
+}
+
+async function renderExamDetail() {
+  const e = state.exam;
+  app.innerHTML = `
+    <div class="max-w-6xl mx-auto p-4 sm:p-6">
+      <div class="flex justify-between items-start mb-5">
+        <div>
+          <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-2">← 시험 목록</button>
+          <h1 class="text-2xl font-bold">${esc(e.name)}</h1>
+          <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
+        </div>
+        <button id="logout" class="text-sm text-slate-500 hover:text-slate-700">로그아웃</button>
+      </div>
+      
+      <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex mb-5">
+        ${[['content','지문 & 과제'],['students','학생 관리'],['dashboard','진도 현황']].map(([k,l]) => `
+          <button data-tab="${k}" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.examTab===k?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-100'}">${l}</button>
+        `).join('')}
+      </div>
+      
+      <div id="tabContent"></div>
+    </div>`;
+  
+  document.getElementById('back').onclick = () => go('admin', { exam: null });
+  document.getElementById('logout').onclick = () => go('entry');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.onclick = () => go('admin', { examTab: b.dataset.tab });
+  });
+  
+  if (state.examTab === 'content') await renderContentTab();
+  else if (state.examTab === 'students') await renderStudentsTab();
+  else if (state.examTab === 'dashboard') await renderDashboardTab();
+}
+
+async function renderContentTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  const { data: passages } = await sb.from('passages').select('*, tasks(*)').eq('exam_id', state.exam.id).order('number');
+  
+  c.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-1">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 mb-3">
+          <div class="font-semibold mb-3">새 지문 추가</div>
+          <div class="space-y-2">
+            <input id="pNum" type="number" placeholder="번호 (예: 1)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <input id="pTitle" placeholder="제목 (예: 환경 보호)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <input id="pSource" placeholder="출처 (선택)" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+            <button id="addPassage" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2 text-sm font-medium">지문 추가</button>
+          </div>
+        </div>
+        <div class="space-y-2">
+          ${passages.length ? passages.map(p => `
+            <div class="bg-white rounded-xl border ${state.selectedPassageId === p.id ? 'border-indigo-500 ring-2 ring-indigo-100' : 'border-slate-200'} p-3 cursor-pointer passage-card" data-id="${p.id}">
+              <div class="flex justify-between items-start">
+                <div class="flex-1">
+                  <div class="text-xs text-slate-500">${p.number}번</div>
+                  <div class="font-medium text-sm">${esc(p.title || '제목 없음')}</div>
+                </div>
+                <button data-id="${p.id}" class="del-passage text-xs text-slate-400 hover:text-rose-600">×</button>
+              </div>
+              <div class="text-xs text-slate-400 mt-1">${(p.tasks || []).length}개 과제</div>
+            </div>
+          `).join('') : '<div class="text-center text-slate-400 text-sm py-6">지문을 추가해주세요</div>'}
+        </div>
+      </div>
+      
+      <div class="lg:col-span-2">
+        <div id="taskPanel" class="bg-white rounded-xl border border-slate-200 p-5 min-h-[300px]">
+          ${state.selectedPassageId ? '' : '<div class="text-center text-slate-400 py-16">왼쪽에서 지문을 선택하면<br>과제(유형)를 추가할 수 있어요</div>'}
+        </div>
+      </div>
+    </div>`;
+  
+  document.getElementById('addPassage').onclick = async () => {
+    const number = parseInt(document.getElementById('pNum').value);
+    const title = document.getElementById('pTitle').value.trim();
+    const source = document.getElementById('pSource').value.trim();
+    if (!number || !title) { toast('번호와 제목은 필수예요', 'error'); return; }
+    const { error } = await sb.from('passages').insert({ exam_id: state.exam.id, number, title, source });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast('추가됐어요', 'success'); renderContentTab(); }
+  };
+  
+  document.querySelectorAll('.passage-card').forEach(el => {
+    el.onclick = async (ev) => {
+      if (ev.target.classList.contains('del-passage')) return;
+      state.selectedPassageId = el.dataset.id;
+      renderContentTab();
+    };
+  });
+  
+  document.querySelectorAll('.del-passage').forEach(el => {
+    el.onclick = async (ev) => {
+      ev.stopPropagation();
+      if (!confirm('이 지문과 관련 과제를 삭제할까요?')) return;
+      await sb.from('passages').delete().eq('id', el.dataset.id);
+      if (state.selectedPassageId === el.dataset.id) state.selectedPassageId = null;
+      toast('삭제됐어요', 'success'); renderContentTab();
+    };
+  });
+  
+  if (state.selectedPassageId) {
+    const p = passages.find(x => x.id === state.selectedPassageId);
+    if (p) renderTaskPanel(p);
+  }
+}
+
+function renderTaskPanel(p) {
+  const panel = document.getElementById('taskPanel');
+  const tasks = (p.tasks || []).sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0));
+  panel.innerHTML = `
+    <div class="mb-4">
+      <div class="text-xs text-slate-500">${p.number}번 지문</div>
+      <div class="font-bold text-lg">${esc(p.title || '제목 없음')}</div>
+    </div>
+    <div class="border-t border-slate-100 pt-4">
+      <div class="font-semibold mb-3 text-sm">과제(유형) 추가</div>
+      <div class="flex gap-2 mb-4">
+        <input id="tName" placeholder="유형명 (예: ①요지)" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <input id="tPoints" type="number" step="0.1" placeholder="배점" class="w-24 border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <button id="addTask" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+      </div>
+      <div class="space-y-1">
+        ${tasks.length ? tasks.map(t => `
+          <div class="flex items-center justify-between px-3 py-2 hover:bg-slate-50 rounded-lg">
+            <div class="text-sm">${esc(t.type_name)}</div>
+            <div class="flex items-center gap-3">
+              ${t.points ? `<span class="text-xs text-slate-500">${t.points}점</span>` : ''}
+              <button data-id="${t.id}" class="del-task text-slate-400 hover:text-rose-600 text-xs">삭제</button>
+            </div>
+          </div>
+        `).join('') : '<div class="text-sm text-slate-400 text-center py-6">과제가 없어요</div>'}
+      </div>
+    </div>`;
+  
+  document.getElementById('addTask').onclick = async () => {
+    const type_name = document.getElementById('tName').value.trim();
+    const points = parseFloat(document.getElementById('tPoints').value) || 0;
+    if (!type_name) { toast('유형명을 입력해주세요', 'error'); return; }
+    const sort_order = (tasks.length ? Math.max(...tasks.map(t => t.sort_order || 0)) : 0) + 1;
+    const { error } = await sb.from('tasks').insert({ passage_id: p.id, type_name, points, sort_order });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast('추가됐어요', 'success'); renderContentTab(); }
+  };
+  
+  document.querySelectorAll('.del-task').forEach(el => {
+    el.onclick = async () => {
+      await sb.from('tasks').delete().eq('id', el.dataset.id);
+      toast('삭제됐어요', 'success'); renderContentTab();
+    };
+  });
+}
+
+async function renderStudentsTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  const { data: students } = await sb.from('students').select('*').eq('exam_id', state.exam.id).order('name');
+  
+  c.innerHTML = `
+    <div class="bg-white rounded-xl border border-slate-200 p-5 mb-4">
+      <div class="font-semibold mb-3">학생 추가 (코드는 자동 생성됩니다)</div>
+      <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+        <input id="sName" placeholder="이름" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <input id="sSchool" placeholder="학교 (선택)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <input id="sGrade" placeholder="학년 (선택)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
+        <button id="addStudent" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+      </div>
+    </div>
+    
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 border-b border-slate-200">
+          <tr>
+            <th class="text-left px-4 py-3 font-semibold">이름</th>
+            <th class="text-left px-4 py-3 font-semibold">학교/학년</th>
+            <th class="text-left px-4 py-3 font-semibold">코드</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          ${students.length ? students.map(s => `
+            <tr>
+              <td class="px-4 py-3 font-medium">${esc(s.name)}</td>
+              <td class="px-4 py-3 text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</td>
+              <td class="px-4 py-3"><span class="font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-semibold">${esc(s.code)}</span></td>
+              <td class="px-4 py-3 text-right"><button data-id="${s.id}" class="del-student text-slate-400 hover:text-rose-600 text-xs">삭제</button></td>
+            </tr>
+          `).join('') : '<tr><td colspan="4" class="text-center py-12 text-slate-400">학생이 없어요</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+  
+  document.getElementById('addStudent').onclick = async () => {
+    const name = document.getElementById('sName').value.trim();
+    const school = document.getElementById('sSchool').value.trim();
+    const grade = document.getElementById('sGrade').value.trim();
+    if (!name) { toast('이름을 입력해주세요', 'error'); return; }
+    let code = genCode(), tries = 0;
+    while (tries < 5) {
+      const { data } = await sb.from('students').select('id').eq('code', code).maybeSingle();
+      if (!data) break;
+      code = genCode(); tries++;
+    }
+    const { error } = await sb.from('students').insert({ name, school, grade, code, exam_id: state.exam.id });
+    if (error) toast('저장 실패: ' + error.message, 'error');
+    else { toast(`코드: ${code}`, 'success'); renderStudentsTab(); }
+  };
+  
+  document.querySelectorAll('.del-student').forEach(el => {
+    el.onclick = async () => {
+      if (!confirm('이 학생과 진도 기록을 삭제할까요?')) return;
+      await sb.from('students').delete().eq('id', el.dataset.id);
+      toast('삭제됐어요', 'success'); renderStudentsTab();
+    };
+  });
+}
+
+async function renderDashboardTab() {
+  const c = document.getElementById('tabContent');
+  c.innerHTML = `<div class="text-slate-400 py-8 text-center">불러오는 중...</div>`;
+  
+  const [{ data: students }, { data: passages }, { data: progress }] = await Promise.all([
+    sb.from('students').select('*').eq('exam_id', state.exam.id).order('name'),
+    sb.from('passages').select('*, tasks(id)').eq('exam_id', state.exam.id).order('number'),
+    sb.from('progress').select('*')
+  ]);
+  
+  const allTaskIds = new Set(passages.flatMap(p => (p.tasks || []).map(t => t.id)));
+  
+  // Build student → completed task ids
+  const sMap = {};
+  students.forEach(s => sMap[s.id] = new Set());
+  progress.forEach(p => {
+    if (p.completed && sMap[p.student_id] && allTaskIds.has(p.task_id)) sMap[p.student_id].add(p.task_id);
+  });
+  
+  // Per-passage stats
+  const passageStats = passages.map(p => ({
+    ...p,
+    taskIds: new Set((p.tasks || []).map(t => t.id))
+  }));
+  
+  const totalTasks = allTaskIds.size;
+  
+  c.innerHTML = `
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th class="text-left px-4 py-3 font-semibold sticky left-0 bg-slate-50 z-10">학생</th>
+              <th class="text-center px-4 py-3 font-semibold">전체 %</th>
+              ${passageStats.map(p => `<th class="text-center px-2 py-3 font-medium text-xs text-slate-600 whitespace-nowrap">${p.number}번</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${students.length ? students.map(s => {
+              const done = sMap[s.id].size;
+              const totalPct = totalTasks ? Math.round(done / totalTasks * 100) : 0;
+              const totalColor = totalPct === 100 ? 'text-emerald-600 bg-emerald-50' : totalPct >= 70 ? 'text-indigo-600 bg-indigo-50' : totalPct >= 40 ? 'text-amber-600 bg-amber-50' : 'text-slate-500 bg-slate-50';
+              return `
+                <tr class="hover:bg-slate-50">
+                  <td class="px-4 py-3 font-medium sticky left-0 bg-white">${esc(s.name)}</td>
+                  <td class="px-4 py-3 text-center"><span class="inline-block ${totalColor} px-2.5 py-1 rounded-md font-semibold">${totalPct}%</span><div class="text-xs text-slate-400 mt-0.5">${done}/${totalTasks}</div></td>
+                  ${passageStats.map(p => {
+                    const pTotal = p.taskIds.size;
+                    if (!pTotal) return '<td class="px-2 py-3 text-center text-slate-300">-</td>';
+                    let pDone = 0;
+                    for (const tid of sMap[s.id]) if (p.taskIds.has(tid)) pDone++;
+                    const pPct = Math.round(pDone/pTotal*100);
+                    const cls = pPct === 100 ? 'bg-emerald-100 text-emerald-700' : pPct > 0 ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-50 text-slate-400';
+                    return `<td class="px-2 py-3 text-center"><span class="${cls} text-xs px-1.5 py-0.5 rounded font-medium">${pDone}/${pTotal}</span></td>`;
+                  }).join('')}
+                </tr>`;
+            }).join('') : '<tr><td colspan="' + (passageStats.length + 2) + '" class="text-center py-12 text-slate-400">학생이 없어요</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="text-xs text-slate-400 mt-3">전체 과제: ${totalTasks}개 · 학생 ${students.length}명</div>`;
+}
+
+// ===== 시작 =====
+render();
+</script>
+</body>
+</html>
