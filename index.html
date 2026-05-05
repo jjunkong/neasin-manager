@@ -473,10 +473,15 @@ function showQuestionModal(passageId, passageLabel) {
       <div class="text-xs text-slate-500 mb-1">${esc(passageLabel)}</div>
       <div class="font-bold text-lg mb-3">질문하기</div>
       <textarea id="qText" rows="3" placeholder="궁금한 내용을 적어주세요" class="w-full border border-slate-300 rounded-lg p-3 text-sm mb-3 resize-none"></textarea>
-      <label class="block mb-3">
-        <span class="text-xs text-slate-500 block mb-1">사진 첨부 (선택)</span>
-        <input id="qImage" type="file" accept="image/*" class="text-sm w-full">
-      </label>
+      <div class="mb-3">
+        <span class="text-xs text-slate-500 block mb-1.5">사진 첨부 (선택)</span>
+        <input id="qImageCamera" type="file" accept="image/*" capture="environment" class="hidden">
+        <input id="qImageGallery" type="file" accept="image/*" class="hidden">
+        <div class="grid grid-cols-2 gap-2">
+          <button type="button" id="btnCamera" class="border border-slate-300 hover:bg-slate-50 rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-1">📷 사진 찍기</button>
+          <button type="button" id="btnGallery" class="border border-slate-300 hover:bg-slate-50 rounded-lg py-2 text-sm font-medium flex items-center justify-center gap-1">🖼️ 갤러리</button>
+        </div>
+      </div>
       <div id="qPreview" class="mb-3"></div>
       <div class="flex gap-2">
         <button id="qCancel" class="flex-1 bg-slate-100 hover:bg-slate-200 py-2.5 rounded-lg text-sm font-medium">취소</button>
@@ -485,27 +490,44 @@ function showQuestionModal(passageId, passageLabel) {
     </div>`;
   document.body.appendChild(modal);
   
+  let selectedFile = null;
+  
   const close = () => modal.remove();
   document.getElementById('qCancel').onclick = close;
   modal.onclick = (e) => { if (e.target === modal) close(); };
   
-  document.getElementById('qImage').onchange = (e) => {
+  document.getElementById('btnCamera').onclick = () => document.getElementById('qImageCamera').click();
+  document.getElementById('btnGallery').onclick = () => document.getElementById('qImageGallery').click();
+  
+  const handleSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    document.getElementById('qPreview').innerHTML = `<img src="${URL.createObjectURL(file)}" class="max-h-40 rounded-lg border border-slate-200">`;
+    selectedFile = file;
+    document.getElementById('qPreview').innerHTML = `
+      <div class="relative inline-block">
+        <img src="${URL.createObjectURL(file)}" class="max-h-48 rounded-lg border border-slate-200">
+        <button type="button" id="qClearImage" class="absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-7 h-7 rounded-full text-sm font-bold flex items-center justify-center shadow-md">×</button>
+      </div>`;
+    document.getElementById('qClearImage').onclick = () => {
+      selectedFile = null;
+      document.getElementById('qImageCamera').value = '';
+      document.getElementById('qImageGallery').value = '';
+      document.getElementById('qPreview').innerHTML = '';
+    };
   };
+  document.getElementById('qImageCamera').onchange = handleSelect;
+  document.getElementById('qImageGallery').onchange = handleSelect;
   
   document.getElementById('qSubmit').onclick = async () => {
     const text = document.getElementById('qText').value.trim();
-    const file = document.getElementById('qImage').files[0];
-    if (!text && !file) { toast('내용이나 사진을 첨부해주세요', 'error'); return; }
+    if (!text && !selectedFile) { toast('내용이나 사진을 첨부해주세요', 'error'); return; }
     
     const btn = document.getElementById('qSubmit');
     btn.disabled = true; btn.textContent = '올리는 중...';
     
     let imageUrl = null;
-    if (file) imageUrl = await uploadImage(file);
-    if (file && !imageUrl) { btn.disabled = false; btn.textContent = '올리기'; return; }
+    if (selectedFile) imageUrl = await uploadImage(selectedFile);
+    if (selectedFile && !imageUrl) { btn.disabled = false; btn.textContent = '올리기'; return; }
     
     const { error } = await sb.from('questions').insert({
       student_id: state.student.id,
@@ -1028,9 +1050,13 @@ async function renderQuestionsTab() {
                   <button class="re-answer-btn text-xs text-slate-500 hover:text-indigo-600 underline" data-id="${q.id}">답변 수정</button>
                 ` : `
                   <textarea data-id="${q.id}" class="ans-text w-full border border-slate-300 rounded-lg p-2 text-sm mb-2 resize-none" rows="2" placeholder="답변을 입력해주세요"></textarea>
+                  <input type="file" accept="image/*" capture="environment" data-id="${q.id}" class="ans-cam-input hidden">
+                  <input type="file" accept="image/*" data-id="${q.id}" class="ans-gal-input hidden">
+                  <div class="ans-preview mb-2" data-id="${q.id}"></div>
                   <div class="flex items-center gap-2 flex-wrap">
-                    <input type="file" accept="image/*" data-id="${q.id}" class="ans-file text-xs">
-                    <button data-id="${q.id}" class="ans-submit bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded-lg">답변 등록</button>
+                    <button type="button" data-id="${q.id}" class="ans-cam-btn border border-slate-300 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs font-medium">📷 촬영</button>
+                    <button type="button" data-id="${q.id}" class="ans-gal-btn border border-slate-300 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs font-medium">🖼️ 갤러리</button>
+                    <button data-id="${q.id}" class="ans-submit bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded-lg ml-auto">답변 등록</button>
                   </div>
                 `}
               </div>
@@ -1043,12 +1069,44 @@ async function renderQuestionsTab() {
     b.onclick = () => { state.questionFilter = b.dataset.qf; renderQuestionsTab(); };
   });
   
+  // 카메라/갤러리 버튼 → 해당 input 트리거
+  c.querySelectorAll('.ans-cam-btn').forEach(btn => {
+    btn.onclick = () => c.querySelector(`input.ans-cam-input[data-id="${btn.dataset.id}"]`)?.click();
+  });
+  c.querySelectorAll('.ans-gal-btn').forEach(btn => {
+    btn.onclick = () => c.querySelector(`input.ans-gal-input[data-id="${btn.dataset.id}"]`)?.click();
+  });
+  
+  // 파일 선택 시 미리보기
+  const handleAnsImage = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const qid = e.target.dataset.id;
+    const preview = c.querySelector(`.ans-preview[data-id="${qid}"]`);
+    if (preview) {
+      preview.innerHTML = `
+        <div class="relative inline-block">
+          <img src="${URL.createObjectURL(file)}" class="max-h-40 rounded-lg border border-slate-200">
+          <button type="button" class="ans-clear absolute top-1 right-1 bg-rose-600 hover:bg-rose-700 text-white w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shadow-md" data-id="${qid}">×</button>
+        </div>`;
+      preview.querySelector('.ans-clear').onclick = () => {
+        c.querySelector(`input.ans-cam-input[data-id="${qid}"]`).value = '';
+        c.querySelector(`input.ans-gal-input[data-id="${qid}"]`).value = '';
+        preview.innerHTML = '';
+      };
+    }
+  };
+  c.querySelectorAll('.ans-cam-input, .ans-gal-input').forEach(input => {
+    input.onchange = handleAnsImage;
+  });
+  
   c.querySelectorAll('.ans-submit').forEach(btn => {
     btn.onclick = async () => {
       const qid = btn.dataset.id;
       const text = c.querySelector(`textarea.ans-text[data-id="${qid}"]`).value.trim();
-      const fileInput = c.querySelector(`input.ans-file[data-id="${qid}"]`);
-      const file = fileInput?.files?.[0];
+      const camFile = c.querySelector(`input.ans-cam-input[data-id="${qid}"]`)?.files?.[0];
+      const galFile = c.querySelector(`input.ans-gal-input[data-id="${qid}"]`)?.files?.[0];
+      const file = camFile || galFile;
       if (!text && !file) { toast('답변 내용이나 이미지를 입력해주세요', 'error'); return; }
       
       btn.disabled = true; btn.textContent = '저장 중...';
