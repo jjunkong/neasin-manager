@@ -31,6 +31,13 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ===== 상수 =====
 const LEVELS = ['하', '중하', '중', '중상', '상'];
+const LEVEL_DESCRIPTIONS = [
+  '손도 안 댐 / 거의 모름',
+  '시도는 함 / 군데군데 알음',
+  '절반 정도 됨',
+  '대체로 잘 됨',
+  '완성도 높음'
+];
 const LEVEL_COLORS = ['#dc2626', '#ea580c', '#ca8a04', '#65a30d', '#16a34a'];
 const LEVEL_BG = ['#fee2e2', '#ffedd5', '#fef9c3', '#ecfccb', '#dcfce7'];
 const LEVEL_TEXT = ['#991b1b', '#9a3412', '#854d0e', '#3f6212', '#166534'];
@@ -299,17 +306,34 @@ async function renderStudent() {
           <button id="logout" class="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 border border-slate-200 rounded-lg">로그아웃</button>
         </div>
         
-        <div class="bg-white rounded-2xl border border-slate-200 p-4 mb-3">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="text-xs text-slate-500">${esc(s.school || '')} ${esc(s.grade || '')}</div>
-              <div class="text-xl font-bold">${esc(s.name)} 학생</div>
-              <div class="text-sm text-slate-600 mt-1">${esc(exam?.name || '시험 미배정')}</div>
-              ${exam?.exam_date ? `<div class="text-xs text-slate-400 mt-0.5">시험일: ${exam.exam_date}</div>` : ''}
-            </div>
-            ${exam?.exam_date ? `<div>${dDayBadge(exam.exam_date, true)}</div>` : ''}
-          </div>
-        </div>
+        ${(() => {
+          const dd = exam?.exam_date ? dDay(exam.exam_date) : null;
+          const gradient = !dd ? 'bg-white border border-slate-200' :
+            dd.past ? 'bg-gradient-to-br from-slate-500 to-slate-600 text-white' :
+            dd.urgent ? 'bg-gradient-to-br from-rose-500 to-rose-600 text-white' :
+            'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white';
+          const textMuted = dd ? 'text-white/80' : 'text-slate-500';
+          const textBody = dd ? 'text-white/90' : 'text-slate-600';
+          const textDate = dd ? 'text-white/70' : 'text-slate-400';
+          
+          return `
+            <div class="${gradient} rounded-2xl p-5 mb-3 ${dd ? 'shadow-md' : ''}">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs ${textMuted}">${esc(s.school || '')} ${esc(s.grade || '')}</div>
+                  <div class="text-xl font-bold ${dd ? 'text-white' : 'text-slate-900'}">${esc(s.name)} 학생</div>
+                  <div class="text-sm ${textBody} mt-1.5">${esc(exam?.name || '시험 미배정')}</div>
+                  ${exam?.exam_date ? `<div class="text-xs ${textDate} mt-0.5">시험일: ${exam.exam_date}</div>` : ''}
+                </div>
+                ${dd ? `
+                  <div class="text-right shrink-0">
+                    <div class="text-4xl sm:text-5xl font-extrabold leading-none">${dd.text}</div>
+                    <div class="text-xs ${textMuted} mt-1.5">${dd.past ? '지난 시험' : dd.days === 0 ? '오늘이에요!' : dd.urgent ? '얼마 안 남았어요' : '남았어요'}</div>
+                  </div>
+                ` : ''}
+              </div>
+            </div>`;
+        })()}
         
         <div class="grid grid-cols-2 gap-2 mb-3">
           <div class="bg-white rounded-xl border border-slate-200 p-3">
@@ -327,9 +351,17 @@ async function renderStudent() {
           <button data-stab="questions" class="stab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.studentTab==='questions'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">질문${questions.length ? ` (${questions.length})` : ''}</button>
         </div>
         
-        <div class="bg-white rounded-xl border border-slate-200 px-3 py-2 text-xs">
-          <span class="text-slate-500 font-medium mr-2">평가 기준</span>
-          ${LEVELS.map((l,i) => `<span class="inline-flex items-center gap-1 mr-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${LEVEL_COLORS[i]}"></span><span>${l}</span></span>`).join('')}
+        <div class="bg-white rounded-xl border border-slate-200 p-3">
+          <div class="text-xs text-slate-500 font-medium mb-2">평가 기준</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-1.5 text-xs">
+            ${LEVELS.map((l,i) => `
+              <div class="flex items-center gap-2">
+                <span class="inline-block w-3 h-3 rounded-full shrink-0" style="background:${LEVEL_COLORS[i]}"></span>
+                <span class="font-semibold text-slate-800 w-10 shrink-0">${l}</span>
+                <span class="text-slate-600">${LEVEL_DESCRIPTIONS[i]}</span>
+              </div>
+            `).join('')}
+          </div>
         </div>
       </header>
       
@@ -361,7 +393,7 @@ function renderStudentProgress(passages, missions, evalMap, questions) {
   if (state.expandedPassageId) {
     const p = passages.find(x => x.id === state.expandedPassageId);
     if (!p) { state.expandedPassageId = null; renderStudentProgress(passages, missions, evalMap, questions); return; }
-    renderPassageDetail(p, missions, evalMap, questions);
+    renderPassageDetail(p, missions, evalMap, questions, passages);
     return;
   }
   
@@ -398,17 +430,25 @@ function renderStudentProgress(passages, missions, evalMap, questions) {
   });
 }
 
-function renderPassageDetail(p, missions, evalMap, questions) {
+function renderPassageDetail(p, missions, evalMap, questions, passages) {
   const main = document.getElementById('studentMain');
   const cellEvals = missions.map(m => evalMap[p.id]?.[m.id] || {});
   const myAvg = avgLevel(cellEvals.map(e => e.student_level));
   const tAvg = avgLevel(cellEvals.map(e => e.teacher_level));
   const passageQuestions = questions.filter(q => q.passage_id === p.id);
-  const pMap = { [p.id]: p.label };
+  
+  // 이전/다음 지문 계산
+  const idx = passages.findIndex(x => x.id === p.id);
+  const prevP = idx > 0 ? passages[idx - 1] : null;
+  const nextP = idx < passages.length - 1 ? passages[idx + 1] : null;
   
   main.innerHTML = `
     <div>
-      <button id="backToGrid" class="text-sm text-slate-500 hover:text-slate-700 mb-3">← 지문 목록</button>
+      <button id="backToGrid" class="text-sm text-slate-700 hover:text-indigo-600 mb-3 inline-flex items-center gap-1.5 font-medium px-3 py-2 rounded-lg hover:bg-white border border-slate-200 bg-white shadow-sm">
+        <span class="text-base">←</span>
+        <span>지문 목록으로</span>
+      </button>
+      <div class="text-xs text-slate-400 mb-3">${idx + 1} / ${passages.length}</div>
       
       <div class="bg-white rounded-xl border border-indigo-200 overflow-hidden">
         <div class="px-5 py-4 border-b border-slate-100 bg-indigo-50">
@@ -474,9 +514,24 @@ function renderPassageDetail(p, missions, evalMap, questions) {
           </div>
         </div>
       ` : ''}
+      
+      <div class="mt-6 grid grid-cols-3 gap-2">
+        <button id="prevP" class="bg-white hover:bg-slate-50 border border-slate-200 rounded-lg py-3 text-sm font-medium text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed" ${!prevP ? 'disabled' : ''}>
+          ← ${prevP ? '이전' : ''}
+        </button>
+        <button id="backToGridBottom" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-3 text-sm font-medium">
+          ☰ 지문 목록
+        </button>
+        <button id="nextP" class="bg-white hover:bg-slate-50 border border-slate-200 rounded-lg py-3 text-sm font-medium text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed" ${!nextP ? 'disabled' : ''}>
+          ${nextP ? '다음' : ''} →
+        </button>
+      </div>
     </div>`;
   
   document.getElementById('backToGrid').onclick = () => { state.expandedPassageId = null; renderStudent(); };
+  document.getElementById('backToGridBottom').onclick = () => { state.expandedPassageId = null; renderStudent(); };
+  if (prevP) document.getElementById('prevP').onclick = () => { state.expandedPassageId = prevP.id; renderStudent(); window.scrollTo(0, 0); };
+  if (nextP) document.getElementById('nextP').onclick = () => { state.expandedPassageId = nextP.id; renderStudent(); window.scrollTo(0, 0); };
   document.getElementById('askBtn').onclick = () => showQuestionModal(p.id, esc(p.label));
   
   // 학생 평가 단계 클릭
