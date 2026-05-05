@@ -949,17 +949,27 @@ async function renderPassagesTab() {
     </div>
     
     <div class="bg-white rounded-xl border border-slate-200 mt-4 overflow-hidden">
-      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+      <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center gap-2 flex-wrap">
         <div class="font-semibold text-sm">등록된 지문 (${passages.length}개)</div>
+        <div class="flex items-center gap-2">
+          <label class="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+            <input type="checkbox" id="pSelectAll" class="w-4 h-4 rounded border-slate-300">
+            전체 선택
+          </label>
+          <button id="pBulkDel" class="bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg px-3 py-1.5 text-xs font-medium" disabled>
+            선택 삭제 (<span id="pSelCount">0</span>)
+          </button>
+        </div>
       </div>
       ${passages.length ? `<div class="divide-y divide-slate-100">
         ${passages.map((p, i) => `
-          <div class="px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-3 flex-1">
-              <span class="text-xs text-slate-400 w-6">${i+1}</span>
-              <input class="p-label flex-1 border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm" value="${esc(p.label)}" data-id="${p.id}">
+          <div class="px-4 py-3 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <input type="checkbox" class="p-check w-4 h-4 rounded border-slate-300 shrink-0" data-id="${p.id}">
+              <span class="text-xs text-slate-400 w-6 shrink-0">${i+1}</span>
+              <input class="p-label flex-1 border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1 text-sm min-w-0" value="${esc(p.label)}" data-id="${p.id}">
             </div>
-            <div class="flex items-center gap-1">
+            <div class="flex items-center gap-1 shrink-0">
               <button class="p-up text-slate-400 hover:text-slate-700 px-2 text-sm" data-id="${p.id}" data-idx="${i}">↑</button>
               <button class="p-down text-slate-400 hover:text-slate-700 px-2 text-sm" data-id="${p.id}" data-idx="${i}">↓</button>
               <button class="p-del text-slate-400 hover:text-rose-600 px-2 text-sm" data-id="${p.id}">삭제</button>
@@ -1028,6 +1038,40 @@ async function renderPassagesTab() {
   };
   document.querySelectorAll('.p-up').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) - 1));
   document.querySelectorAll('.p-down').forEach(b => b.onclick = () => swap(parseInt(b.dataset.idx), parseInt(b.dataset.idx) + 1));
+  
+  // 체크박스 + 일괄삭제 로직
+  const updateSelCount = () => {
+    const checked = document.querySelectorAll('.p-check:checked');
+    const count = checked.length;
+    document.getElementById('pSelCount').textContent = count;
+    document.getElementById('pBulkDel').disabled = count === 0;
+    const all = document.querySelectorAll('.p-check');
+    document.getElementById('pSelectAll').checked = count > 0 && count === all.length;
+  };
+  
+  document.querySelectorAll('.p-check').forEach(cb => {
+    cb.onchange = updateSelCount;
+  });
+  
+  const selectAll = document.getElementById('pSelectAll');
+  if (selectAll) {
+    selectAll.onchange = () => {
+      document.querySelectorAll('.p-check').forEach(cb => cb.checked = selectAll.checked);
+      updateSelCount();
+    };
+  }
+  
+  const bulkDel = document.getElementById('pBulkDel');
+  if (bulkDel) {
+    bulkDel.onclick = async () => {
+      const ids = Array.from(document.querySelectorAll('.p-check:checked')).map(cb => cb.dataset.id);
+      if (!ids.length) return;
+      if (!confirm(`선택한 ${ids.length}개 지문과 관련된 모든 평가/질문이 삭제됩니다. 계속할까요?`)) return;
+      const { error } = await sb.from('passages').delete().in('id', ids);
+      if (error) toast('삭제 실패: ' + error.message, 'error');
+      else { toast(`${ids.length}개 삭제됐어요`, 'success'); renderPassagesTab(); }
+    };
+  }
 }
 
 // ----- 학생 관리 -----
