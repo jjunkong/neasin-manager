@@ -42,30 +42,18 @@
     --kkj-emerald-glow: #ECFDF5;
   }
   
-  /* 학생 화면 전용 스타일 (.student-view 안에서만 적용) */
-  .student-view {
-    font-family: 'Nanum Gothic', -apple-system, sans-serif;
-    background: var(--kkj-bg);
-    background-image: radial-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px);
-    background-size: 24px 24px;
-    min-height: 100vh;
-    color: var(--kkj-text);
-  }
-  .student-view .gmarket {
-    font-family: 'GmarketSans', 'Nanum Gothic', sans-serif;
-  }
-  .student-view .mono {
-    font-family: 'JetBrains Mono', monospace;
+  /* 기본 폰트: Nanum Gothic (글로벌) */
+  * { font-family: 'Nanum Gothic', -apple-system, sans-serif; }
+  .gmarket { font-family: 'GmarketSans', 'Nanum Gothic', sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  
+  body {
+    background: var(--kkj-bg) !important;
+    background-image: radial-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px) !important;
+    background-size: 24px 24px !important;
   }
   
-  /* 기존 스타일 (선생님 화면 + 진입 화면) */
-  * { font-family: 'Pretendard', -apple-system, sans-serif; }
-  .student-view * { font-family: 'Nanum Gothic', sans-serif; }
-  .student-view .gmarket { font-family: 'GmarketSans', 'Nanum Gothic', sans-serif; }
-  .student-view .mono { font-family: 'JetBrains Mono', monospace; }
-  
-  input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
-  .student-view input:focus, .student-view textarea:focus, .student-view select:focus { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+  input:focus, textarea:focus, select:focus { outline: none; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
   
   .lvl-btn { user-select: none; }
   .lvl-btn:hover:not(.active) { background: #e2e8f0 !important; }
@@ -159,7 +147,7 @@ function dDay(examDate) {
 function dDayBadge(examDate, big=false) {
   const d = dDay(examDate);
   if (!d) return '';
-  const colorClass = d.past ? 'bg-slate-100 text-slate-500' : d.urgent ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700';
+  const colorClass = d.past ? 'bg-slate-100 text-slate-500' : d.urgent ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700';
   if (big) return `<span class="inline-flex items-center justify-center font-bold rounded-lg px-3 py-1.5 text-base ${colorClass}">${d.text}</span>`;
   return `<span class="inline-flex items-center justify-center font-semibold rounded-md px-2 py-0.5 text-xs ${colorClass}">${d.text}</span>`;
 }
@@ -167,10 +155,13 @@ function dDayBadge(examDate, big=false) {
 function logoHeader() {
   return `
     <div class="flex items-center gap-2.5 cursor-pointer" id="logoLink">
-      <div class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-xs tracking-tight shrink-0">KKJ</div>
+      <div class="relative w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs gmarket shrink-0" style="background: var(--kkj-text); font-weight: 700; letter-spacing: 0.05em;">
+        KKJ
+        <span class="absolute" style="top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%; background: var(--kkj-emerald); box-shadow: 0 0 8px var(--kkj-emerald);"></span>
+      </div>
       <div class="leading-tight">
-        <div class="font-bold text-slate-900 text-sm">김기준영어학원</div>
-        <div class="text-xs text-slate-500">내신 진도 관리</div>
+        <div class="gmarket text-sm" style="font-weight: 700; color: var(--kkj-text); letter-spacing: -0.01em;">김기준영어학원</div>
+        <div class="text-xs" style="color: var(--kkj-text-soft);">내신 진도 관리</div>
       </div>
     </div>`;
 }
@@ -296,15 +287,18 @@ function renderEntry() {
     <div class="min-h-screen flex items-center justify-center p-6">
       <div class="w-full max-w-md">
         <div class="text-center mb-10">
-          <div class="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl text-white font-bold mb-4">KKJ</div>
-          <div class="text-2xl font-bold text-slate-900 mb-1">김기준영어학원</div>
-          <div class="text-slate-500 text-sm">내신 진도 관리</div>
+          <div class="relative inline-flex items-center justify-center w-16 h-16 rounded-2xl text-white gmarket mb-4" style="background: var(--kkj-text); font-weight: 700; letter-spacing: 0.05em; box-shadow: 0 4px 16px rgba(15, 23, 42, 0.15);">
+            KKJ
+            <span class="absolute" style="top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--kkj-emerald); box-shadow: 0 0 12px var(--kkj-emerald);"></span>
+          </div>
+          <div class="text-2xl gmarket mb-1" style="font-weight: 700; color: var(--kkj-text); letter-spacing: -0.02em;">김기준영어학원</div>
+          <div class="text-sm mono" style="color: var(--kkj-text-soft);">// 내신 진도 관리</div>
         </div>
         <div class="space-y-3">
-          <button id="btnAdmin" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-semibold shadow-sm transition">
+          <button id="btnAdmin" class="w-full py-4 rounded-xl gmarket transition" style="background: var(--kkj-text); color: var(--kkj-emerald-bright); font-weight: 700; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);">
             선생님 로그인
           </button>
-          <button id="btnStudent" class="w-full bg-white hover:bg-slate-50 border border-slate-200 text-slate-900 py-4 rounded-xl font-semibold transition">
+          <button id="btnStudent" class="w-full py-4 rounded-xl gmarket transition" style="background: var(--kkj-card); border: 1px solid var(--kkj-emerald); color: var(--kkj-text); font-weight: 700; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.05);">
             학생 코드 입력
           </button>
         </div>
@@ -318,13 +312,13 @@ function renderEntry() {
 function renderAdminLogin() {
   app.innerHTML = `
     <div class="min-h-screen flex items-center justify-center p-6">
-      <div class="w-full max-w-md bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
+      <div class="w-full max-w-md p-8 rounded-2xl" style="background: var(--kkj-card); border: 1px solid var(--kkj-emerald); box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.06), 0 4px 20px rgba(16, 185, 129, 0.1);">
         <div class="mb-6">
-          <button id="back" class="text-sm text-slate-500 hover:text-slate-700 mb-4">← 뒤로</button>
-          <h2 class="text-xl font-bold">선생님 로그인</h2>
+          <button id="back" class="text-sm mb-4 mono" style="color: var(--kkj-text-soft);">← 뒤로</button>
+          <h2 class="text-xl gmarket" style="font-weight: 700; color: var(--kkj-text);">선생님 로그인</h2>
         </div>
-        <input id="pw" type="password" autocomplete="new-password" placeholder="비밀번호" class="w-full border border-slate-300 rounded-lg px-4 py-3 mb-3" autofocus>
-        <button id="login" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-lg font-semibold">들어가기</button>
+        <input id="pw" type="password" autocomplete="new-password" placeholder="비밀번호" class="w-full rounded-lg px-4 py-3 mb-3" style="border: 1px solid var(--kkj-border); background: var(--kkj-card-soft);" autofocus>
+        <button id="login" class="w-full py-3 rounded-lg gmarket" style="background: var(--kkj-text); color: var(--kkj-emerald-bright); font-weight: 700;">들어가기</button>
       </div>
     </div>`;
   document.getElementById('back').onclick = () => go('entry');
@@ -873,7 +867,7 @@ function renderStudentQuestions(passages, missions, questions) {
             <div class="text-slate-400">${esc(fmtDate(q.created_at))}</div>
           </div>
           <div class="p-4">
-            <div class="text-xs text-indigo-600 font-medium mb-1">질문</div>
+            <div class="text-xs text-emerald-600 font-medium mb-1">질문</div>
             ${q.text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.text)}</div>` : ''}
             ${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer" onclick="window.open('${esc(q.image_url)}', '_blank')">` : ''}
             
@@ -912,7 +906,7 @@ function showQuestionModal(passageId, passageLabel) {
       <div id="qPreview" class="mb-3"></div>
       <div class="flex gap-2">
         <button id="qCancel" class="flex-1 bg-slate-100 hover:bg-slate-200 py-2.5 rounded-lg text-sm font-medium">취소</button>
-        <button id="qSubmit" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg text-sm font-medium">올리기</button>
+        <button id="qSubmit" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-sm font-medium">올리기</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -996,12 +990,12 @@ async function renderExamList() {
         const nearest = upcoming[0];
         if (!nearest) return '';
         return `
-          <div class="bg-gradient-to-r from-indigo-600 to-indigo-700 rounded-2xl p-5 mb-5 text-white">
+          <div class="bg-gradient-to-r from-emerald-600 to-emerald-700 rounded-2xl p-5 mb-5 text-white">
             <div class="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <div class="text-xs text-indigo-100 mb-1">가장 가까운 시험</div>
+                <div class="text-xs text-emerald-100 mb-1">가장 가까운 시험</div>
                 <div class="font-bold text-lg">${esc(nearest.name)}</div>
-                <div class="text-sm text-indigo-100">${esc(nearest.school)} ${esc(nearest.grade)} · ${nearest.exam_date}</div>
+                <div class="text-sm text-emerald-100">${esc(nearest.school)} ${esc(nearest.grade)} · ${nearest.exam_date}</div>
               </div>
               <div class="text-3xl font-bold">${dDay(nearest.exam_date).text}</div>
             </div>
@@ -1022,7 +1016,7 @@ async function renderExamList() {
             <label class="text-xs text-slate-500 block mb-1">시험 시작일 (D-day 표시용)</label>
             <input id="newDate" type="date" class="border border-slate-300 rounded-lg px-3 py-2 w-full">
           </div>
-          <button id="addExam" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 font-medium sm:self-end">추가</button>
+          <button id="addExam" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 font-medium sm:self-end">추가</button>
         </div>
         <div class="text-xs text-slate-400 mt-2">시험 추가 시 미션 4개(이해도/워크북/변형문제/서술형)가 자동 생성돼요</div>
       </div>
@@ -1031,7 +1025,7 @@ async function renderExamList() {
         ${exams.length ? exams.map(e => {
           const dd = dDay(e.exam_date);
           return `
-            <div class="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center hover:border-indigo-300 transition gap-3">
+            <div class="bg-white rounded-xl border border-slate-200 p-4 flex justify-between items-center hover:border-emerald-300 transition gap-3">
               <div class="flex-1 cursor-pointer exam-row min-w-0" data-id="${e.id}">
                 <div class="flex items-center gap-2 flex-wrap">
                   <div class="font-semibold">${esc(e.name)}</div>
@@ -1040,7 +1034,7 @@ async function renderExamList() {
                 <div class="text-sm text-slate-500">${esc(e.school)} ${esc(e.grade)} · ${e.exam_date || '날짜미정'}</div>
               </div>
               <div class="flex items-center gap-1 shrink-0">
-                <button data-id="${e.id}" class="edit-exam text-slate-400 hover:text-indigo-600 text-sm px-3">수정</button>
+                <button data-id="${e.id}" class="edit-exam text-slate-400 hover:text-emerald-600 text-sm px-3">수정</button>
                 <button data-id="${e.id}" class="del-exam text-slate-400 hover:text-rose-600 text-sm px-3">삭제</button>
               </div>
             </div>`;
@@ -1118,7 +1112,7 @@ function showEditExamModal(exam) {
       </div>
       <div class="flex gap-2 mt-5">
         <button id="eCancel" class="flex-1 bg-slate-100 hover:bg-slate-200 py-2.5 rounded-lg text-sm font-medium">취소</button>
-        <button id="eSave" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg text-sm font-medium">저장</button>
+        <button id="eSave" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-sm font-medium">저장</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -1183,7 +1177,7 @@ async function renderExamDetail() {
           ['students','학생 관리'],
           ['missions','미션 관리'],
         ].map(([k,l]) => `
-          <button data-tab="${k}" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.examTab===k?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">${l}</button>
+          <button data-tab="${k}" class="tab-btn px-4 py-2 rounded-lg text-sm font-medium ${state.examTab===k?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-50'}">${l}</button>
         `).join('')}
       </div>
       
@@ -1269,7 +1263,7 @@ async function renderDashboardTab() {
               return `
                 <tr class="hover:bg-slate-50">
                   <td class="px-4 py-3 sticky left-0 bg-white">
-                    <button class="student-link font-medium text-slate-900 hover:text-indigo-600 underline-offset-2 hover:underline" data-id="${s.id}">${esc(s.name)}</button>
+                    <button class="student-link font-medium text-slate-900 hover:text-emerald-600 underline-offset-2 hover:underline" data-id="${s.id}">${esc(s.name)}</button>
                     <div class="text-xs text-slate-400 font-mono mt-0.5">${esc(s.code)}</div>
                   </td>
                   <td class="px-3 py-3 text-center">${overallAvg ? levelBadgeBig(overallAvg.idx) : '<span class="text-slate-300 text-sm">-</span>'}</td>
@@ -1361,7 +1355,7 @@ async function renderEvaluateTab() {
           <div class="text-xs text-slate-500 font-medium mb-2 px-2">학생 선택</div>
           <div class="space-y-1">
             ${students.map(s => `
-              <button class="student-pick w-full text-left px-3 py-2 rounded-lg text-sm transition ${s.id === state.selectedStudentId ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-slate-50'}" data-id="${s.id}">
+              <button class="student-pick w-full text-left px-3 py-2 rounded-lg text-sm transition ${s.id === state.selectedStudentId ? 'bg-emerald-50 text-emerald-700 font-medium' : 'hover:bg-slate-50'}" data-id="${s.id}">
                 ${esc(s.name)}
                 <div class="text-xs text-slate-400 font-mono">${esc(s.code)}</div>
               </button>
@@ -1401,7 +1395,7 @@ async function renderEvaluateTab() {
                         <div class="font-medium text-sm">${esc(m.name)}</div>
                         ${m.track_count ? '<span class="text-xs text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">종류 추적</span>' : ''}
                         ${m.track_count ? `
-                          <button class="add-type-btn ml-auto inline-flex items-center gap-1 text-xs text-indigo-600 hover:bg-indigo-50 px-2 py-1 rounded border border-indigo-200" data-passage="${p.id}" data-mission="${m.id}">
+                          <button class="add-type-btn ml-auto inline-flex items-center gap-1 text-xs text-emerald-600 hover:bg-emerald-50 px-2 py-1 rounded border border-emerald-200" data-passage="${p.id}" data-mission="${m.id}">
                             <span class="text-base leading-none">+</span> 종류 추가
                           </button>
                         ` : ''}
@@ -1575,8 +1569,8 @@ async function renderQuestionsTab() {
   
   c.innerHTML = `
     <div class="bg-white rounded-xl border border-slate-200 p-1 inline-flex gap-1 mb-4">
-      <button data-qf="unanswered" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='unanswered'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">미답변 (${allQuestions.filter(q => !q.answered_at).length})</button>
-      <button data-qf="all" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='all'?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-50'}">전체 (${allQuestions.length})</button>
+      <button data-qf="unanswered" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='unanswered'?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-50'}">미답변 (${allQuestions.filter(q => !q.answered_at).length})</button>
+      <button data-qf="all" class="qf-btn px-4 py-2 rounded-lg text-sm font-medium ${state.questionFilter==='all'?'bg-emerald-600 text-white':'text-slate-600 hover:bg-slate-50'}">전체 (${allQuestions.length})</button>
     </div>
     
     <div class="space-y-3">
@@ -1592,7 +1586,7 @@ async function renderQuestionsTab() {
               <div class="text-xs text-slate-400">${esc(fmtDate(q.created_at))}</div>
             </div>
             <div class="p-4">
-              <div class="text-xs text-indigo-600 font-medium mb-1">질문</div>
+              <div class="text-xs text-emerald-600 font-medium mb-1">질문</div>
               ${q.text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.text)}</div>` : ''}
               ${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer mb-2" onclick="window.open('${esc(q.image_url)}', '_blank')">` : ''}
               
@@ -1601,7 +1595,7 @@ async function renderQuestionsTab() {
                   <div class="text-xs text-emerald-600 font-medium mb-1">답변 · ${esc(fmtDate(q.answered_at))}</div>
                   ${q.answer_text ? `<div class="text-sm whitespace-pre-wrap mb-2">${esc(q.answer_text)}</div>` : ''}
                   ${q.answer_image_url ? `<img src="${esc(q.answer_image_url)}" class="max-h-60 rounded-lg border border-slate-200 cursor-pointer mb-2" onclick="window.open('${esc(q.answer_image_url)}', '_blank')">` : ''}
-                  <button class="re-answer-btn text-xs text-slate-500 hover:text-indigo-600 underline" data-id="${q.id}">답변 수정</button>
+                  <button class="re-answer-btn text-xs text-slate-500 hover:text-emerald-600 underline" data-id="${q.id}">답변 수정</button>
                 ` : `
                   <textarea data-id="${q.id}" class="ans-text w-full border border-slate-300 rounded-lg p-2 text-sm mb-2 resize-none" rows="2" placeholder="답변을 입력해주세요"></textarea>
                   <input type="file" accept="image/*" capture="environment" data-id="${q.id}" class="ans-cam-input hidden">
@@ -1610,7 +1604,7 @@ async function renderQuestionsTab() {
                   <div class="flex items-center gap-2 flex-wrap">
                     <button type="button" data-id="${q.id}" class="ans-cam-btn border border-slate-300 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs font-medium">📷 촬영</button>
                     <button type="button" data-id="${q.id}" class="ans-gal-btn border border-slate-300 hover:bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs font-medium">🖼️ 갤러리</button>
-                    <button data-id="${q.id}" class="ans-submit bg-indigo-600 hover:bg-indigo-700 text-white text-sm px-3 py-1.5 rounded-lg ml-auto">답변 등록</button>
+                    <button data-id="${q.id}" class="ans-submit bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-3 py-1.5 rounded-lg ml-auto">답변 등록</button>
                   </div>
                 `}
               </div>
@@ -1703,7 +1697,7 @@ async function renderPassagesTab() {
         <div class="font-semibold mb-3">단일 지문 추가</div>
         <div class="flex gap-2 mb-2">
           <input id="pLabel" placeholder="지문명 (예: 교과서 1과)" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-          <button id="addOne" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+          <button id="addOne" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
         </div>
         <div class="text-xs text-slate-400">예: 교과서 1과, 교과서 2과, 모의고사 1번 등</div>
       </div>
@@ -1728,7 +1722,7 @@ async function renderPassagesTab() {
             <input id="moEnd" type="number" value="12" class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
           </div>
         </div>
-        <button id="addMo" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">일괄 추가</button>
+        <button id="addMo" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm font-medium">일괄 추가</button>
         <div class="text-xs text-slate-400 mt-1.5">예: "26년 6월 모의고사 1번" ~ "26년 6월 모의고사 12번"</div>
       </div>
     </div>
@@ -1739,7 +1733,7 @@ async function renderPassagesTab() {
         <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
           <input id="bPrefix" placeholder="앞부분 (예: 교과서)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm sm:col-span-2">
           <input id="bSuffix" value="과" placeholder="뒷부분" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-          <button id="addBulk" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+          <button id="addBulk" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
           <input id="bStart" type="number" value="1" placeholder="시작" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
           <input id="bEnd" type="number" value="5" placeholder="끝" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
         </div>
@@ -1907,7 +1901,7 @@ async function renderStudentsTab() {
         <input id="sName" placeholder="이름" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
         <input id="sSchool" placeholder="학교 (선택)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
         <input id="sGrade" placeholder="학년 (선택)" class="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-        <button id="addStudent" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+        <button id="addStudent" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
       </div>
     </div>
     
@@ -1930,7 +1924,7 @@ async function renderStudentsTab() {
                 <input class="s-grade border border-transparent hover:border-slate-200 focus:border-slate-300 rounded px-2 py-1" value="${esc(s.grade || '')}" placeholder="학년" data-id="${s.id}" style="width:60px">
               </td>
               <td class="px-4 py-3">
-                <input class="s-code font-mono bg-indigo-50 text-indigo-700 px-2 py-1 rounded text-xs font-semibold border border-transparent hover:border-indigo-300 focus:border-indigo-500 focus:bg-white uppercase" value="${esc(s.code)}" data-id="${s.id}" data-old="${esc(s.code)}" maxlength="10" style="width:100px">
+                <input class="s-code font-mono bg-emerald-50 text-emerald-700 px-2 py-1 rounded text-xs font-semibold border border-transparent hover:border-emerald-300 focus:border-emerald-500 focus:bg-white uppercase" value="${esc(s.code)}" data-id="${s.id}" data-old="${esc(s.code)}" maxlength="10" style="width:100px">
               </td>
               <td class="px-4 py-3 text-right"><button data-id="${s.id}" class="del-student text-slate-400 hover:text-rose-600 text-xs">삭제</button></td>
             </tr>
@@ -2017,7 +2011,7 @@ async function renderMissionsTab() {
       <div class="text-xs text-slate-500 mb-3">"종류 추적"을 켜면 학생이 완료한 종류 수도 입력할 수 있어요 (워크북/변형문제 등)</div>
       <div class="flex gap-2">
         <input id="mName" placeholder="새 미션명" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm">
-        <button id="addMission" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
+        <button id="addMission" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-4 py-2 text-sm font-medium">추가</button>
       </div>
     </div>
     
