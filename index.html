@@ -89,7 +89,18 @@ function logoHeader() {
 
 function attachLogoLink() {
   const el = document.getElementById('logoLink');
-  if (el) el.onclick = () => { if (confirm('처음 화면으로 돌아갈까요?')) go('entry'); };
+  if (el) el.onclick = () => {
+    // 선생님: 시험 목록으로 (로그아웃 X)
+    if (state.view === 'admin') {
+      go('admin', { exam: null });
+    }
+    // 학생: 지문 그리드로 (로그아웃 X)
+    else if (state.view === 'student') {
+      state.studentTab = 'progress';
+      state.expandedPassageId = null;
+      renderStudent();
+    }
+  };
 }
 
 function toast(msg, type='info') {
