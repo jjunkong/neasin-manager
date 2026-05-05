@@ -140,7 +140,7 @@ const app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const genCode = () => {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return Array.from({length: 2}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 };
 const fmtDate = (d) => d ? new Date(d).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -351,7 +351,7 @@ function renderStudentLogin() {
           <button id="back" class="text-sm mb-4 mono" style="color: var(--kkj-text-soft);">← 뒤로</button>
           <h2 class="text-xl gmarket" style="font-weight: 700; color: var(--kkj-text);">학생 코드 입력</h2>
         </div>
-        <input id="code" type="text" placeholder="예: ABC123" class="w-full rounded-lg px-4 py-3 mb-3 text-center mono text-lg uppercase tracking-widest" style="border: 1px solid var(--kkj-border); background: var(--kkj-card-soft);" autofocus maxlength="10">
+        <input id="code" type="text" placeholder="예: A2" class="w-full rounded-lg px-4 py-3 mb-3 text-center mono text-lg uppercase tracking-widest" style="border: 1px solid var(--kkj-border); background: var(--kkj-card-soft);" autofocus maxlength="10">
         <button id="login" class="w-full py-3 rounded-lg gmarket" style="background: var(--kkj-text); color: var(--kkj-emerald-bright); font-weight: 700;">들어가기</button>
       </div>
     </div>`;
@@ -1982,7 +1982,7 @@ async function renderStudentsTab() {
       input.value = newCode;
       
       if (!newCode || newCode === oldCode) { input.value = oldCode; return; }
-      if (newCode.length < 3 || newCode.length > 10) { toast('코드는 3~10자', 'error'); input.value = oldCode; return; }
+      if (newCode.length < 2 || newCode.length > 10) { toast('코드는 2~10자', 'error'); input.value = oldCode; return; }
       if (!/^[A-Z0-9]+$/.test(newCode)) { toast('영문 대문자와 숫자만 가능해요', 'error'); input.value = oldCode; return; }
       
       // 중복 체크
